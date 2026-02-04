@@ -1,0 +1,17 @@
+gfx/expl1.png
+gfx/expl2.png
+gfx/font/font_tile.png
+gfx/lightcycle_blue.png
+gfx/lightcycle_green.png
+gfx/lightcycle_orange.png
+gfx/lightcycle_purple.png
+gfx/lightcycle_red.png
+gfx/lightcycle_white.png
+gfx/menu/title.png
+gfx/tile/bgtile.png
+gfx/tile/bgtile_indigo.png
+gfx/tile/bgtile_purple.png
+snd/snd_gameover.mp3
+snd/snd_lose.mp3
+snd/snd_start.mp3
+snd/snd_win.mp3
