@@ -11,6 +11,8 @@ gfx/menu/title.png
 gfx/tile/bgtile.png
 gfx/tile/bgtile_indigo.png
 gfx/tile/bgtile_purple.png
+snd/Placeholder stuff.txt
+snd/mus_menu.mp3
 snd/snd_gameover.mp3
 snd/snd_lose.mp3
 snd/snd_start.mp3
