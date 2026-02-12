@@ -11,9 +11,20 @@ gfx/menu/title.png
 gfx/tile/bgtile.png
 gfx/tile/bgtile_indigo.png
 gfx/tile/bgtile_purple.png
-snd/Placeholder stuff.txt
+snd/0Placeholder stuff.txt
+snd/mus_gameplay.mp3
 snd/mus_menu.mp3
+snd/snd_crash.mp3
+snd/snd_cyclehum.mp3
+snd/snd_cyclestart.mp3
+snd/snd_cycleturn.mp3
+snd/snd_disconnect.mp3
 snd/snd_gameover.mp3
 snd/snd_lose.mp3
+snd/snd_menu_back.mp3
+snd/snd_menu_confirm.mp3
+snd/snd_newgame.mp3
 snd/snd_start.mp3
+snd/snd_votingstart.mp3
 snd/snd_win.mp3
+snd/snd_win_alt.mp3
