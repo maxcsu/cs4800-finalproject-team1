@@ -1,0 +1,1 @@
+python javatron_spoof_client.py --clients 2 --hello-cmd "" --turn-cmd "C_TURN|{DIR}" --turn-pattern "U,R,D,L" --turn-rate-hz 6 --rematch-vote YES
