@@ -1,4 +1,4 @@
-// This file was entirely handled by ChatGPT as a testing tool for the server. I claim none of it. -Maxwell Nield
+# This file was entirely handled by ChatGPT as a testing tool for the server. I claim none of it. -Maxwell Nield
 
 import argparse
 import os
