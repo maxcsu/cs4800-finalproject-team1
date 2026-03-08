@@ -12,6 +12,7 @@ import edu.csu.javatron.server.match.MatchRoom;
 import edu.csu.javatron.server.net.ClientSession;
 import edu.csu.javatron.server.net.Protocol;
 import edu.csu.javatron.server.player.ColorResolver;
+import edu.csu.javatron.server.StatsManager;
 
 import java.io.IOException;
 import java.net.Socket;
@@ -37,7 +38,9 @@ public final class LobbyManager {
 
     // PlayerNumber -> BoxId (only when actively in a match)
     private final Map<Integer, Integer> playerToBox = new ConcurrentHashMap<>();
-
+    
+ // Stats tracking for win/loss ratio feature
+    private final StatsManager statsManager = new StatsManager();
     public LobbyManager(ServerConfig config, ServerConfig.Logger logger, ServerMain.ServerGui guiOrNull) {
         this.config = config;
         this.logger = logger;
@@ -184,7 +187,14 @@ public final class LobbyManager {
             }
             return;
         }
+     // Handle stats request
+        if (cmd.equalsIgnoreCase(Protocol.C_GET_STATS)) {
+            int playerNum = session.getPlayerNumber();
+            String stats = statsManager.getStats(playerNum);
 
+            session.sendLine(Protocol.S_STATS + "|" + stats);
+            return;
+        }
         session.sendLine(Protocol.S_ERROR + "|UNKNOWN_COMMAND|" + cmd);
     }
 
@@ -355,6 +365,21 @@ public final class LobbyManager {
         if (result.playerB != null) playerToBox.remove(result.playerB.getPlayerNumber());
 
         logger.info(String.format("[Box %d] Match ended. %s", box, result.summaryLine));
+     // Update win/loss stats when a full match concludes
+        if (result.summaryLine != null && result.summaryLine.contains("won the match")) {
+
+            int playerANum = result.playerA.getPlayerNumber();
+            int playerBNum = result.playerB.getPlayerNumber();
+
+            // If summary contains Player A's number, A won
+            if (result.summaryLine.contains(String.format("%02d", playerANum))) {
+                statsManager.recordWin(playerANum);
+                statsManager.recordLoss(playerBNum);
+            } else {
+                statsManager.recordWin(playerBNum);
+                statsManager.recordLoss(playerANum);
+            }
+        }
 
         // IMPORTANT: Do NOT auto-requeue.
         // MatchRoom is responsible for emitting S_MATCH_END (and S_REMATCH_PROMPT, if applicable).

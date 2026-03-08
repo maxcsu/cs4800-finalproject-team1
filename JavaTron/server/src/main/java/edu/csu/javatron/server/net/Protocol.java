@@ -18,6 +18,8 @@ public final class Protocol {
 	public static final String C_TURN = "C_TURN";					// C_TURN|U/D/L/R
 	public static final String C_REMATCH_VOTE = "C_REMATCH_VOTE";	// C_REMATCH_VOTE|YES/NO  (legacy: C_REMATCH_VOTE)
 	public static final String C_PING = "C_PING";					// C_PING|clientTimeMillis
+	// Stats request from client
+	public static final String C_GET_STATS = "C_GET_STATS";         // C_GET_STATS
 	
 	// Server to Client
 	public static final String S_WELCOME = "S_WELCOME";				// S_WELCOME
@@ -30,6 +32,8 @@ public final class Protocol {
 	public static final String S_REMATCH_PROMPT = "S_REMATCH_PROMPT";
 	public static final String S_PONG = "S_PONG";
 	public static final String S_ERROR = "S_ERROR";
+	// Stats response to client
+	public static final String S_STATS = "S_STATS";                  // S_STATS|wins=X|losses=Y|winRate=Z
 	
 	// Shared gameplay constants for gameplay between client and server
 	public static final int VIRTUAL_WIDTH = 480;
