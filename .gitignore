@@ -3,6 +3,11 @@
 ###############################################################################
 *.class
 *.jar
+
+# Gradle wrapper JAR must be tracked so gradlew/gradlew.bat works on fresh clones
+!gradle/wrapper/gradle-wrapper.jar
+!**/gradle/wrapper/gradle-wrapper.jar
+
 *.war
 *.ear
 hs_err_pid*
