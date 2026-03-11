@@ -361,10 +361,22 @@ public final class LobbyManager {
     }
 
     private void startMatchPvp(int box, ClientSession a, ClientSession b) {
-        Set<String> used = new HashSet<>();
-        String colorA = ColorResolver.resolveColor(a.getRequestedColor(), config.enforceUniqueColors, used);
-        used.add(colorA);
-        String colorB = ColorResolver.resolveColor(b.getRequestedColor(), config.enforceUniqueColors, used);
+        String requestedA = ColorResolver.normalizeColor(a.getRequestedColor());
+        String requestedB = ColorResolver.normalizeColor(b.getRequestedColor());
+
+        String colorA = requestedA;
+        String colorB = requestedB;
+
+        if (config.enforceUniqueColors && requestedA.equalsIgnoreCase(requestedB)) {
+            Set<String> used = new HashSet<>();
+            if (a.getPlayerNumber() <= b.getPlayerNumber()) {
+                used.add(requestedA);
+                colorB = ColorResolver.resolveColor(requestedB, true, used);
+            } else {
+                used.add(requestedB);
+                colorA = ColorResolver.resolveColor(requestedA, true, used);
+            }
+        }
 
         a.setActiveColor(colorA);
         b.setActiveColor(colorB);
