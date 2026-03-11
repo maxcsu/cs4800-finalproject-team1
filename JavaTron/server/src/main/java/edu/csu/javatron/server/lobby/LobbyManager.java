@@ -1,7 +1,6 @@
 /*
- * AI Assistance Disclosure:
- * Portions of this file were drafted with assistance from OpenAI ChatGPT.
- * All architecture, design, and final review were performed by Maxwell Nield.
+ * AI Tools Use Transparency Disclosure:
+ * This file was handled by Maxwell Nield using Codex.
  */
 
 package edu.csu.javatron.server.lobby;
@@ -9,6 +8,7 @@ package edu.csu.javatron.server.lobby;
 import edu.csu.javatron.server.ServerConfig;
 import edu.csu.javatron.server.ServerMain;
 import edu.csu.javatron.server.match.MatchRoom;
+import edu.csu.javatron.server.match.MatchRules;
 import edu.csu.javatron.server.net.ClientSession;
 import edu.csu.javatron.server.net.Protocol;
 import edu.csu.javatron.server.player.ColorResolver;
@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class LobbyManager {
+    private static final long HEARTBEAT_CHECK_INTERVAL_MS = 1000L;
 
     private final ServerConfig config;
     private final ServerConfig.Logger logger;
@@ -43,6 +44,7 @@ public final class LobbyManager {
         this.logger = logger;
         this.guiOrNull = guiOrNull;
         this.activeMatchesByBox = new MatchRoom[config.maxMatches + 1]; // 1..maxMatches
+        startHeartbeatMonitor();
     }
 
     public void shutdown() {
@@ -83,9 +85,10 @@ public final class LobbyManager {
         logger.info(String.format("[Lobby] Player %s %02d (IP %s) connected.",
                 session.getRequestedColor(), session.getPlayerNumber(), session.getIp()));
 
-        // Minimal wire format for now: S_WELCOME|playerNumber|allowBotGames
+        // Minimal wire format for now: S_WELCOME|playerNumber|allowBotGames|motd=<text>
         // allowBotGames == "client may offer practice while waiting"
-        session.sendLine(Protocol.S_WELCOME + "|" + playerNum + "|" + config.allowBotGames);
+        session.sendLine(Protocol.S_WELCOME + "|" + playerNum + "|" + config.allowBotGames
+                + "|motd=" + config.serverMotd);
 
         updateGuiPlayers();
         sendLobbyStatusToAll();
@@ -97,6 +100,38 @@ public final class LobbyManager {
         Thread t = new Thread(() -> runClientReadLoop(session), "ClientReader-" + session.getPlayerNumber());
         t.setDaemon(true);
         t.start();
+    }
+
+    private void startHeartbeatMonitor() {
+        Thread t = new Thread(this::runHeartbeatMonitor, "LobbyHeartbeatMonitor");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void runHeartbeatMonitor() {
+        while (true) {
+            long now = System.currentTimeMillis();
+            for (ClientSession session : clientsByNumber.values()) {
+                if (session == null) {
+                    continue;
+                }
+                if (!session.isConnected()) {
+                    onClientDisconnected(session, "Socket closed");
+                    continue;
+                }
+                if (now - session.getLastHeardMillis() > MatchRules.HEARTBEAT_TIMEOUT_MS) {
+                    session.close();
+                    onClientDisconnected(session, "Heartbeat timeout");
+                }
+            }
+
+            try {
+                Thread.sleep(HEARTBEAT_CHECK_INTERVAL_MS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
     }
 
     private void runClientReadLoop(ClientSession session) {
@@ -136,7 +171,8 @@ public final class LobbyManager {
             logger.info(String.format("[Lobby] Player %02d says HELLO. RequestedColor=%s",
                     session.getPlayerNumber(), session.getRequestedColor()));
 
-            session.sendLine(Protocol.S_WELCOME + "|" + session.getPlayerNumber() + "|" + config.allowBotGames);
+            session.sendLine(Protocol.S_WELCOME + "|" + session.getPlayerNumber() + "|" + config.allowBotGames
+                    + "|motd=" + config.serverMotd);
             sendLobbyStatusToAll();
             updateGuiPlayers();
             return;
@@ -361,16 +397,38 @@ public final class LobbyManager {
         // Client should interrupt practice mode on receipt.
         a.sendLine(Protocol.S_MATCH_FOUND + "|box=" + box + "|opponent=" + b.getPlayerNumber()
                 + "|yourColor=" + a.getDisplayColor() + "|oppColor=" + b.getDisplayColor()
-                + "|oppName=" + b.getPlayerName() + "|yourSide=A");
+                + "|oppName=" + b.getPlayerName() + "|yourSide=A"
+                + "|startDelayMs=" + MatchRules.MATCH_FOUND_DELAY_MS);
 
         b.sendLine(Protocol.S_MATCH_FOUND + "|box=" + box + "|opponent=" + a.getPlayerNumber()
                 + "|yourColor=" + b.getDisplayColor() + "|oppColor=" + a.getDisplayColor()
-                + "|oppName=" + a.getPlayerName() + "|yourSide=B");
+                + "|oppName=" + a.getPlayerName() + "|yourSide=B"
+                + "|startDelayMs=" + MatchRules.MATCH_FOUND_DELAY_MS);
 
         sendLobbyStatusToAll();
         updateGuiPlayers();
 
-        room.start();
+        startMatchAfterDelay(room, a, b, box);
+    }
+
+    private void startMatchAfterDelay(MatchRoom room, ClientSession a, ClientSession b, int box) {
+        Thread t = new Thread(() -> {
+            try {
+                Thread.sleep(MatchRules.MATCH_FOUND_DELAY_MS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            if (activeMatchesByBox[box] != room) {
+                return;
+            }
+            if (a == null || b == null || !a.isConnected() || !b.isConnected()) {
+                return;
+            }
+            room.start();
+        }, "MatchFoundDelay-" + box);
+        t.setDaemon(true);
+        t.start();
     }
 
     private void onMatchEnded(int box, MatchRoom.MatchResult result) {
@@ -399,7 +457,9 @@ public final class LobbyManager {
     private void onClientDisconnected(ClientSession session, String reason) {
         int num = session.getPlayerNumber();
 
-        clientsByNumber.remove(num);
+        if (!clientsByNumber.remove(num, session)) {
+            return;
+        }
 
         queuedPlayerNumbers.remove(num);
         rebuildWaitingQueueWithout(num);
@@ -410,7 +470,7 @@ public final class LobbyManager {
             activeMatchesByBox[box] = null;
 
             if (room != null) {
-                room.shutdown();
+                room.onClientDisconnected(session);
             }
 
             // Remove anyone else still mapped to this box (return them to lobby)
@@ -427,7 +487,9 @@ public final class LobbyManager {
             for (Integer n : alsoInBox) {
                 ClientSession other = clientsByNumber.get(n);
                 if (other != null && other.isConnected()) {
-                    other.sendLine(Protocol.S_MATCH_END + "|Opponent disconnected");
+                    // Fallback: if a disconnect happened during rematch voting and the room did
+                    // not get a chance to transition the survivor, force them back to lobby.
+                    other.sendLine(Protocol.S_RETURN_TO_LOBBY + "|reason=disconnect");
                 }
             }
         }

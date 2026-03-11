@@ -1,3 +1,9 @@
+/*
+ * AI Tools Use Transparency Disclosure:
+ * Primary prior GitHub handling credit: Bhawna Gogna.
+ * This file was handled by Maxwell Nield using Codex.
+ */
+
 package edu.csu.javatron.client.net;
 
 import java.io.*;
@@ -7,32 +13,65 @@ import com.badlogic.gdx.Gdx;
 
 /** Client networking wrapper. */
 public class NetworkClient {
+    private static final long SERVER_TIMEOUT_MS = 12_000L;
+
     private Socket socket;
     private BufferedReader in;
     private PrintWriter out;
     private Thread listenerThread;
     private JavaTronGame game;
+    private volatile boolean connected = false;
+    private volatile boolean intentionalDisconnect = false;
+    private volatile boolean lossHandled = false;
+    private volatile long lastServerHeardMillis = 0L;
 
     public NetworkClient(JavaTronGame game) {
         this.game = game;
     }
 
     public void connect(String host, int port) throws IOException {
+        intentionalDisconnect = false;
+        lossHandled = false;
         socket = new Socket(host, port);
         in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         out = new PrintWriter(socket.getOutputStream(), true);
+        connected = true;
+        lastServerHeardMillis = System.currentTimeMillis();
         listenerThread = new Thread(this::listen);
         listenerThread.start();
     }
 
     public void disconnect() {
+        disconnect(true);
+    }
+
+    public void disconnect(boolean intentional) {
         try {
+            intentionalDisconnect = intentional;
+            connected = false;
             if (socket != null)
                 socket.close();
             if (listenerThread != null)
                 listenerThread.interrupt();
         } catch (IOException e) {
             e.printStackTrace();
+        } finally {
+            socket = null;
+            in = null;
+            out = null;
+        }
+    }
+
+    public boolean isConnected() {
+        return connected;
+    }
+
+    public void checkConnectionTimeout() {
+        if (!connected || intentionalDisconnect || lossHandled) {
+            return;
+        }
+        if (System.currentTimeMillis() - lastServerHeardMillis > SERVER_TIMEOUT_MS) {
+            handleConnectionLost();
         }
     }
 
@@ -46,10 +85,19 @@ public class NetworkClient {
         try {
             String line;
             while ((line = in.readLine()) != null) {
+                lastServerHeardMillis = System.currentTimeMillis();
                 handleMessage(line);
             }
+            if (!intentionalDisconnect) {
+                handleConnectionLost();
+            }
         } catch (IOException e) {
-            System.out.println("Connection lost: " + e.getMessage());
+            if (!intentionalDisconnect) {
+                System.out.println("Connection lost: " + e.getMessage());
+                handleConnectionLost();
+            }
+        } finally {
+            connected = false;
         }
     }
 
@@ -57,23 +105,45 @@ public class NetworkClient {
         System.out.println("Received: " + message);
         if (message.startsWith(Protocol.S_SNAPSHOT)) {
             parseSnapshot(message);
+        } else if (message.startsWith(Protocol.S_WELCOME)) {
+            String[] parts = message.split("\\|");
+            for (String part : parts) {
+                if (part.startsWith("motd=")) {
+                    game.serverMotd = part.substring(5);
+                }
+            }
         } else if (message.startsWith(Protocol.S_MATCH_FOUND)) {
             String[] parts = message.split("\\|");
             for (String part : parts) {
+                if (part.startsWith("yourColor=")) {
+                    game.matchPlayerColor = part.substring(10);
+                }
                 if (part.startsWith("oppName="))
                     game.oppName = part.substring(8);
                 else if (part.startsWith("oppColor="))
-                    game.oppColor = part.substring(9);
+                    game.matchOppColor = part.substring(9);
                 else if (part.startsWith("yourSide=")) {
                     game.isPlayerA = "A".equalsIgnoreCase(part.substring(9));
                 }
             }
-            Gdx.app.postRunnable(() -> game.showGameScreen());
+            boolean wasPracticeMode = game.practiceMode;
+            game.practiceMode = false;
+            Gdx.app.postRunnable(() -> {
+                game.onMatchFoundNotice();
+                if (wasPracticeMode && game.getScreen() instanceof edu.csu.javatron.GameScreen) {
+                    game.showLobbyScreen();
+                }
+            });
         } else if (message.startsWith(Protocol.S_MATCH_START)) {
             // New match or rematch started by server - reset countdown state and transition
             // to game
             game.countdownMessage = null;
             game.countdownActive = false;
+            game.roundResultText = null;
+            game.finalMatchResult = false;
+            game.latestRoundEventType = null;
+            game.latestWinnerSide = null;
+            game.practiceMode = false;
             Gdx.app.postRunnable(() -> game.showGameScreen());
         } else if (message.startsWith(Protocol.S_MATCH_END)) {
             // S_MATCH_END|box=1|BLUE 01 won the match. Final Score:
@@ -83,6 +153,31 @@ public class NetworkClient {
                 game.winnerName = parts[2];
             }
             Gdx.app.postRunnable(() -> game.showRematchVoteScreen());
+        } else if (message.startsWith(Protocol.S_REMATCH_STATUS)) {
+            String[] parts = message.split("\\|");
+            String result = "";
+            for (String part : parts) {
+                if (part.startsWith("result=")) {
+                    result = part.substring(7);
+                }
+            }
+            String finalResult = result;
+            Gdx.app.postRunnable(() -> {
+                if ("yes".equalsIgnoreCase(finalResult)) {
+                    game.playNewGameSound();
+                } else if ("no".equalsIgnoreCase(finalResult) || "disconnect".equalsIgnoreCase(finalResult)) {
+                    game.playDisconnectSound();
+                }
+            });
+        } else if (message.startsWith(Protocol.S_RETURN_TO_LOBBY)) {
+            game.roundResultText = null;
+            game.finalMatchResult = false;
+            Gdx.app.postRunnable(() -> {
+                game.clearMatchFoundNotice();
+                game.matchPlayerColor = null;
+                game.matchOppColor = null;
+                game.showLobbyScreen();
+            });
         } else if (message.startsWith(Protocol.S_LOBBY_STATUS)) {
             String[] parts = message.split("\\|");
             if (parts.length > 1 && parts[1].startsWith("players=")) {
@@ -91,13 +186,40 @@ public class NetworkClient {
                 } catch (NumberFormatException ignored) {
                 }
             }
+        } else if (message.startsWith(Protocol.S_PONG)) {
+            lastServerHeardMillis = System.currentTimeMillis();
         } else if (message.startsWith(Protocol.S_ROUND_END)) {
             String[] parts = message.split("\\|");
+            boolean collision = false;
+            String eventType = null;
+            String yourResult = "";
+            String summary = null;
+            boolean matchOver = false;
+            String winnerSide = null;
             for (String part : parts) {
                 if (part.startsWith("COUNTDOWN:")) {
                     game.countdownMessage = part.substring(10);
                     game.countdownActive = true;
+                } else if (part.startsWith("event=")) {
+                    eventType = part.substring(6);
+                    collision = true;
+                } else if (part.startsWith("yourResult=")) {
+                    yourResult = part.substring(11);
+                } else if (part.startsWith("winnerSide=")) {
+                    winnerSide = part.substring(11);
+                } else if (part.startsWith("summary=")) {
+                    summary = part.substring(8);
+                } else if (part.startsWith("matchOver=")) {
+                    matchOver = "1".equals(part.substring(10));
                 }
+            }
+            if (collision) {
+                game.roundResultText = summary;
+                game.latestRoundResult = yourResult;
+                game.finalMatchResult = matchOver;
+                game.latestRoundEventType = eventType;
+                game.latestWinnerSide = winnerSide;
+                game.latestRoundEventId++;
             }
         }
         // TODO: Handle other messages
@@ -106,8 +228,8 @@ public class NetworkClient {
     private void parseSnapshot(String message) {
         // S_SNAPSHOT|box=1|tick=1234|ax=..|ay=..|bx=..|by=..|adir=R|bdir=L|score=1-0|round=2
         String[] parts = message.split("\\|");
-        int ax = 5, ay = 5, bx = 43, by = 75;
-        char aDir = 'R', bDir = 'L';
+        int ax = 24, ay = 20, bx = 24, by = 60;
+        char aDir = 'D', bDir = 'U';
         int aWins = 0, bWins = 0, roundNumber = 1;
         long tick = 0;
         for (String part : parts) {
@@ -138,5 +260,24 @@ public class NetworkClient {
             game.countdownActive = false;
         }
         game.updateSnapshot(ax, ay, bx, by, aDir, bDir, aWins, bWins, roundNumber);
+    }
+
+    private void handleConnectionLost() {
+        if (lossHandled || intentionalDisconnect) {
+            return;
+        }
+        lossHandled = true;
+        connected = false;
+        try {
+            if (socket != null) {
+                socket.close();
+            }
+        } catch (IOException ignored) {
+        } finally {
+            socket = null;
+            in = null;
+            out = null;
+        }
+        Gdx.app.postRunnable(game::handleServerConnectionLost);
     }
 }

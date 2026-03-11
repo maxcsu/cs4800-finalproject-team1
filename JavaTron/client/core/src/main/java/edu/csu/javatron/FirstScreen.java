@@ -1,3 +1,9 @@
+/*
+ * AI Tools Use Transparency Disclosure:
+ * Primary prior GitHub handling credit: Bhawna Gogna.
+ * This file was handled by Maxwell Nield using Codex.
+ */
+
 package edu.csu.javatron;
 
 import com.badlogic.gdx.Gdx;
@@ -39,6 +45,7 @@ public class FirstScreen extends ScreenAdapter {
 
 	@Override
     public void show() {
+		game.playMenuMusic();
 		camera = new OrthographicCamera(); // Camera. Orthographic for 2D.
 		// Viewport. FitViewport keeps aspect radio for virtual resolution consistent.
 		viewport = new FitViewport(JavaTronGame.VIRTUAL_WIDTH, JavaTronGame.VIRTUAL_HEIGHT, camera);
@@ -56,30 +63,7 @@ public class FirstScreen extends ScreenAdapter {
 	// This function is called whenever the window is resized.
     @Override
     public void resize(int width, int height) {
-    	// Prevent window sizes of zero
-    	if (width <= 0 || height <= 0) return;
-    	
-    	// Maintain aspect ratio from virtual resolution
-    	float targetAspect = JavaTronGame.VIRTUAL_WIDTH / JavaTronGame.VIRTUAL_HEIGHT;
-    	float currentAspect = (float) width / (float) height;
-    	
-    	int newWidth = width;
-    	int newHeight = height;
-    	
-    	// Get width from height or vice versa
-    	// If window is too wide, get width from height.
-    	// If too tall, get height from width.
-    	if (currentAspect > targetAspect) {
-    		newWidth = Math.round(height * targetAspect);
-    	} else if (currentAspect < targetAspect) {
-    		newHeight = Math.round(width / targetAspect);
-    	}
-    	
-    	// Constrain window size
-    	if (newWidth != width || newHeight != height) {
-    		Gdx.graphics.setWindowedMode(newWidth, newHeight);
-    		return;
-    	}
+    	if (WindowAspectEnforcer.enforce(width, height)) return;
     	
     	// Update the viewport with new size.
     	viewport.update(width, height, true);
@@ -102,8 +86,8 @@ public class FirstScreen extends ScreenAdapter {
     	float worldHeight = viewport.getWorldHeight();
     	
     	// Repeat counts based on texture pixel size
-    	float uRepeat = worldWidth / (float) bgTileTexture.getWidth();
-    	float vRepeat = worldHeight / (float) bgTileTexture.getHeight();
+    	float uRepeat = MenuVisuals.backgroundURepeat(worldWidth, bgTileTexture.getWidth());
+    	float vRepeat = MenuVisuals.backgroundVRepeat(worldHeight, bgTileTexture.getHeight());
     	
     	// Draw the grid, originating from (0, 0) across whole viewport.
     	spriteBatch.begin();

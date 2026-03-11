@@ -1,0 +1,16 @@
+mus_gameplay.mp3 - 00:09.439
+mus_menu.mp3 - 00:13.782
+snd_crash.mp3 - 00:00.444
+snd_cyclehum.mp3 - 00:00.183
+snd_cyclestart.mp3 - 00:02.067
+snd_cycleturn.mp3 - 00:00.546
+snd_disconnect.mp3 - 00:01.010
+snd_gameover.mp3 - 00:06.072
+snd_lose.mp3 - 00:05.616
+snd_menu_back.mp3 - 00:00.418
+snd_menu_confirm.mp3 - 00:01.555
+snd_newgame.mp3 - 00:01.683
+snd_start.mp3 - 00:04.296
+snd_votingstart.mp3 - 00:01.695
+snd_win.mp3 - 00:03.696
+snd_win_alt.mp3 - 00:03.541

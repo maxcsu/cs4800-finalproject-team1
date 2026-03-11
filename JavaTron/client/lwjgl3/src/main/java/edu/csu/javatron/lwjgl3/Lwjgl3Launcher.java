@@ -1,3 +1,9 @@
+/*
+ * AI Tools Use Transparency Disclosure:
+ * Primary prior GitHub handling credit: Bhawna Gogna.
+ * This file was handled by Maxwell Nield using Codex.
+ */
+
 package edu.csu.javatron.lwjgl3;
 
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
@@ -35,7 +41,7 @@ public class Lwjgl3Launcher {
     	// Refer to FirstScreen.java for that. It's under FirstScreen.resize()
 
     	// Define the window size, scaling from the defined virtual resolution.
-    	float scale = 1.5f; // Increased scale for better size
+    	float scale = 1.05f; // About 70% of the previous default startup size
     	int windowWidth = (int)(JavaTronGame.VIRTUAL_WIDTH * scale); // Inherit width from JavaTronGame
     	int windowHeight = (int)(JavaTronGame.VIRTUAL_HEIGHT * scale); // Inherit height
     	

@@ -1,11 +1,11 @@
 /*
- * AI Assistance Disclosure:
- * Portions of this file were drafted with assistance from OpenAI ChatGPT.
- * All architecture, design, and final review were performed by Maxwell Nield.
+ * AI Tools Use Transparency Disclosure:
+ * This file was handled by Maxwell Nield using Codex.
  */
 
 package edu.csu.javatron.server.net;
 
+import edu.csu.javatron.server.player.ColorResolver;
 import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
@@ -70,9 +70,7 @@ public final class ClientSession {
     }
 
     public void setRequestedColor(String requestedColor) {
-        if (requestedColor != null && !requestedColor.isBlank()) {
-            this.requestedColor = requestedColor.trim();
-        }
+        this.requestedColor = ColorResolver.normalizeColor(requestedColor);
     }
 
     public String getPlayerName() {
@@ -93,7 +91,7 @@ public final class ClientSession {
         if (activeColor == null || activeColor.isBlank()) {
             this.activeColor = null;
         } else {
-            this.activeColor = activeColor.trim();
+            this.activeColor = ColorResolver.normalizeColor(activeColor);
         }
     }
 

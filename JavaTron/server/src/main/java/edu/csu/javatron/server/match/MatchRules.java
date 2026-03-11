@@ -1,7 +1,6 @@
 /*
- * AI Assistance Disclosure:
- * Portions of this file were drafted with assistance from OpenAI ChatGPT.
- * All architecture, design, and final review were performed by Maxwell Nield.
+ * AI Tools Use Transparency Disclosure:
+ * This file was handled by Maxwell Nield using Codex.
  */
 
 package edu.csu.javatron.server.match;
@@ -29,6 +28,21 @@ public final class MatchRules {
 
     /** Heartbeat timeout (ms) after which a client is considered dropped. */
     public static final long HEARTBEAT_TIMEOUT_MS = 12_000L;
+
+    /** Delay after matchmaking before clients are transitioned from lobby to gameplay. */
+    public static final long MATCH_FOUND_DELAY_MS = 5_000L;
+
+    /** Server-side freeze after a non-final round collision. */
+    public static final long ROUND_COLLISION_FREEZE_MS = 5_616L;
+
+    /** Delay before the start cue sound should fire ahead of gameplay unfreezing. */
+    public static final long ROUND_START_SOUND_LEAD_MS = 2_067L;
+
+    /** Server-side freeze after the match-winning collision before voting begins. */
+    public static final long MATCH_CONCLUSION_FREEZE_MS = 6_500L;
+
+    /** Short delay before remaining clients are returned to lobby after no/disconnect. */
+    public static final long RETURN_TO_LOBBY_DELAY_MS = 1_500L;
 
     /** How long we wait for rematch votes after a match ends. */
     public static final long REMATCH_VOTE_TIMEOUT_MS = 30_000L;

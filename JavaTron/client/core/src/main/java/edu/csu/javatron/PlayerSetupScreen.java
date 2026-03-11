@@ -1,3 +1,9 @@
+/*
+ * AI Tools Use Transparency Disclosure:
+ * Primary prior GitHub handling credit: Bhawna Gogna.
+ * This file was handled by Maxwell Nield using Codex.
+ */
+
 package edu.csu.javatron;
 
 import com.badlogic.gdx.Gdx;
@@ -151,6 +157,7 @@ public class PlayerSetupScreen extends ScreenAdapter {
                 }
                 game.playerName = playerName;
                 game.playerColor = selectedColor;
+                game.savePlayerIdentity();
                 game.getNetworkClient().send("C_HELLO|" + selectedColor + "|" + playerName);
                 game.showLobbyScreen();
             }
@@ -170,6 +177,11 @@ public class PlayerSetupScreen extends ScreenAdapter {
     }
 
     @Override
+    public void show() {
+        game.playMenuMusic();
+    }
+
+    @Override
     public void render(float delta) {
         Gdx.gl.glClearColor(0, 0, 0, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
@@ -179,8 +191,8 @@ public class PlayerSetupScreen extends ScreenAdapter {
         spriteBatch.begin();
         float worldWidth = stage.getViewport().getWorldWidth();
         float worldHeight = stage.getViewport().getWorldHeight();
-        float uRepeat = worldWidth / bgTexture.getWidth();
-        float vRepeat = worldHeight / bgTexture.getHeight();
+        float uRepeat = MenuVisuals.backgroundURepeat(worldWidth, bgTexture.getWidth());
+        float vRepeat = MenuVisuals.backgroundVRepeat(worldHeight, bgTexture.getHeight());
         spriteBatch.draw(bgTexture, 0, 0, worldWidth, worldHeight, 0, 0, uRepeat, vRepeat);
         
         float logoWidth = 400; // approximate target width
@@ -194,6 +206,9 @@ public class PlayerSetupScreen extends ScreenAdapter {
 
     @Override
     public void resize(int width, int height) {
+        if (WindowAspectEnforcer.enforce(width, height)) {
+            return;
+        }
         stage.getViewport().update(width, height, true);
     }
 

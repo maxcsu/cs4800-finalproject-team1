@@ -1,7 +1,6 @@
 /*
- * AI Assistance Disclosure:
- * Portions of this file were drafted with assistance from OpenAI ChatGPT.
- * All architecture, design, and final review were performed by Maxwell Nield.
+ * AI Tools Use Transparency Disclosure:
+ * This file was handled by Maxwell Nield using Codex.
  */
 
 package edu.csu.javatron.server.net;
@@ -28,6 +27,8 @@ public final class Protocol {
 	public static final String S_ROUND_END = "S_ROUND_END";
 	public static final String S_MATCH_END = "S_MATCH_END";
 	public static final String S_REMATCH_PROMPT = "S_REMATCH_PROMPT";
+	public static final String S_REMATCH_STATUS = "S_REMATCH_STATUS";
+	public static final String S_RETURN_TO_LOBBY = "S_RETURN_TO_LOBBY";
 	public static final String S_PONG = "S_PONG";
 	public static final String S_ERROR = "S_ERROR";
 	

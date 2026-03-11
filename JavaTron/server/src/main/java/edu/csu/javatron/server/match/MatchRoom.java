@@ -1,7 +1,6 @@
 /*
- * AI Assistance Disclosure:
- * Portions of this file were drafted with assistance from OpenAI ChatGPT.
- * All architecture, design, and final review were performed by Maxwell Nield.
+ * AI Tools Use Transparency Disclosure:
+ * This file was handled by Maxwell Nield using Codex.
  */
 
 package edu.csu.javatron.server.match;
@@ -93,20 +92,12 @@ public final class MatchRoom {
     // Set true when a player presses the direction they are already traveling (acceleration request)
     private boolean aAccelRequested = false;
     private boolean bAccelRequested = false;
-    
- // Movement speed multipliers (1.0 = normal)
-    private float aSpeedMultiplier = 1.0f;
-    private float bSpeedMultiplier = 1.0f;
-
-    // Slow effect duration tracking (in ticks)
-    private int aSlowTicks = 0;
-    private int bSlowTicks = 0;
+    private boolean aSlowRequested = false;
+    private boolean bSlowRequested = false;
 
     // Constants
     private static final float ACCEL_MULTIPLIER = 1.25f;
     private static final float SLOW_MULTIPLIER = 0.75f;
-    private static final int SLOW_DURATION_TICKS = 20; // ~0.3 sec at 60 TPS
-
     private long tick = 0;
 
     private int aWins = 0;
@@ -182,6 +173,44 @@ private int roundNumber = 1;
     public void onClientRematchVote(ClientSession who, boolean yes) {
         if (!waitingForRematchVotes) return;
         rematchVotes.vote(who, yes);
+        if (yes) {
+            sendToBoth(Protocol.S_REMATCH_STATUS + "|result=yes|by=" + who.getPlayerNumber());
+        }
+    }
+
+    public void onClientDisconnected(ClientSession who) {
+        running.set(false);
+        boolean duringRematchVote = waitingForRematchVotes;
+        waitingForRematchVotes = false;
+        rematchVotes.end();
+
+        ClientSession survivor = (who == a) ? b : a;
+        String summary;
+        if (survivor != null && survivor.isConnected()) {
+            if (duringRematchVote) {
+                survivor.sendLine(Protocol.S_REMATCH_STATUS + "|result=disconnect");
+                sleepMillis(MatchRules.RETURN_TO_LOBBY_DELAY_MS);
+                survivor.sendLine(Protocol.S_RETURN_TO_LOBBY + "|reason=disconnect");
+                summary = "Opponent disconnected during rematch vote";
+            } else {
+                summary = "Opponent disconnected. You win the match by forfeit.";
+                survivor.sendLine(Protocol.S_ROUND_END
+                        + "|box=" + boxId
+                        + "|event=FORFEIT"
+                        + "|yourResult=WIN"
+                        + "|winnerSide=" + ((survivor == a) ? "A" : "B")
+                        + "|matchOver=1"
+                        + "|summary=" + summary);
+                sleepMillis(MatchRules.MATCH_CONCLUSION_FREEZE_MS);
+                survivor.sendLine(Protocol.S_RETURN_TO_LOBBY + "|reason=disconnect");
+            }
+        } else {
+            summary = "Both players disconnected";
+        }
+
+        if (onEnded != null) {
+            onEnded.onMatchEnded(boxId, new MatchResult(a, b, summary));
+        }
     }
 
     private void runLoop() {
@@ -231,6 +260,9 @@ private int roundNumber = 1;
                     resetForNewMatch();
                     runCountdown();
                 } else if (rematchVotes.anyVotedNo() || rematchVotes.timedOut(nowMs)) {
+                    sendToBoth(Protocol.S_REMATCH_STATUS + "|result=no");
+                    sleepMillis(MatchRules.RETURN_TO_LOBBY_DELAY_MS);
+                    sendToBoth(Protocol.S_RETURN_TO_LOBBY + "|reason=no");
                     endMatch("Match concluded");
                     return;
                 }
@@ -277,6 +309,7 @@ if (config != null && config.idleKickSeconds > 0) {
             bMoveBudget += basePerTick * bEffective;
 
             // Perform as many simultaneous sub-steps as budgets allow.
+            boolean roundTransitionHandled = false;
             while (aMoveBudget >= 1.0f || bMoveBudget >= 1.0f) {
                 int[] aDelta = (aMoveBudget >= 1.0f) ? dirToDelta(aDir) : new int[]{0, 0};
                 int[] bDelta = (bMoveBudget >= 1.0f) ? dirToDelta(bDir) : new int[]{0, 0};
@@ -288,13 +321,20 @@ if (config != null && config.idleKickSeconds > 0) {
 
                 if (res.anyCollision()) {
                     handleRoundEnd(res);
+                    roundTransitionHandled = true;
                     break;
                 }
             }
 
-            // Clear per-tick accel requests (clients will typically resend if holding the key)
+            // Clear per-tick speed modifier requests (clients resend while the key is held)
             aAccelRequested = false;
             bAccelRequested = false;
+            aSlowRequested = false;
+            bSlowRequested = false;
+
+            if (roundTransitionHandled) {
+                continue;
+            }
 
             sendSnapshot();
             sleepUntilNextTick(nanosPerTick);
@@ -352,7 +392,27 @@ if (config != null && config.idleKickSeconds > 0) {
                     roundNumber, aWins, bWins);
         }
 
-        sendToBoth(Protocol.S_ROUND_END + "|box=" + boxId + "|" + roundSummary);
+        boolean matchOver = aWins >= MatchRules.ROUNDS_TO_WIN_MATCH || bWins >= MatchRules.ROUNDS_TO_WIN_MATCH;
+        String winnerSide = "NONE";
+        if (aHit && !bHit) {
+            winnerSide = "B";
+        } else if (bHit && !aHit) {
+            winnerSide = "A";
+        }
+
+        a.sendLine(Protocol.S_ROUND_END + "|box=" + boxId
+                + "|event=COLLISION"
+                + "|yourResult=" + perspectiveResult(winnerSide, "A")
+                + "|winnerSide=" + winnerSide
+                + "|matchOver=" + (matchOver ? 1 : 0)
+                + "|summary=" + roundSummary);
+        b.sendLine(Protocol.S_ROUND_END + "|box=" + boxId
+                + "|event=COLLISION"
+                + "|yourResult=" + perspectiveResult(winnerSide, "B")
+                + "|winnerSide=" + winnerSide
+                + "|matchOver=" + (matchOver ? 1 : 0)
+                + "|summary=" + roundSummary);
+        sendSnapshot();
 
         if (logger != null) {
             logger.info("[Box " + boxId + "] " + roundSummary);
@@ -360,9 +420,8 @@ if (config != null && config.idleKickSeconds > 0) {
 
         if (wasDraw) consecutiveDraws++; else consecutiveDraws = 0;
 
-
         // Match ended?
-        if (aWins >= MatchRules.ROUNDS_TO_WIN_MATCH || bWins >= MatchRules.ROUNDS_TO_WIN_MATCH) {
+        if (matchOver) {
             String winner;
             if (aWins > bWins) winner = a.getDisplayColor() + " " + pad2(a.getPlayerNumber());
             else winner = b.getDisplayColor() + " " + pad2(b.getPlayerNumber());
@@ -374,6 +433,8 @@ if (config != null && config.idleKickSeconds > 0) {
             //   S_MATCH_END|box=<id>|<summary>|winner=<playerNum>|result=WIN/LOSE|score=a-b
             int winnerNum = (aWins > bWins) ? a.getPlayerNumber() : b.getPlayerNumber();
             String score = aWins + "-" + bWins;
+
+            sleepMillis(MatchRules.MATCH_CONCLUSION_FREEZE_MS);
 
             a.sendLine(Protocol.S_MATCH_END + "|box=" + boxId + "|" + matchSummary
                     + "|winner=" + pad2(winnerNum)
@@ -428,9 +489,12 @@ if (wasDraw && config != null && config.maxConsecutiveDraws > 0 && consecutiveDr
     }
 }
 
+        sleepMillis(MatchRules.ROUND_COLLISION_FREEZE_MS);
+
         // Next round
         roundNumber++;
         resetForNextRound();
+        runCountdown();
     }
 
     private void resetForNewMatch() {
@@ -462,25 +526,29 @@ if (wasDraw && config != null && config.maxConsecutiveDraws > 0 && consecutiveDr
         // Reset speed/budget state
         aMoveBudget = 0.0f;
         bMoveBudget = 0.0f;
-        aSpeedMultiplier = 1.0f;
-        bSpeedMultiplier = 1.0f;
-        aSlowTicks = 0;
-        bSlowTicks = 0;
         aAccelRequested = false;
         bAccelRequested = false;
+        aSlowRequested = false;
+        bSlowRequested = false;
 
         // Notify clients of reset state via one snapshot immediately
         sendSnapshot();
     }
     
     private void runCountdown() {
-        // Send 3,2,1,GO at 1-second intervals while sending snapshots (no stepping)
-        for (int i = 3; i >= 1; i--) {
-            sendToBoth(Protocol.S_ROUND_END + "|box=" + boxId + "|COUNTDOWN:" + i);
-            sendSnapshot();
-            sleepMillis(1000);
-        }
-
+        // Send the countdown while gameplay is frozen. A dedicated start cue packet is
+        // emitted 2067ms before the round resumes.
+        sendToBoth(Protocol.S_ROUND_END + "|box=" + boxId + "|COUNTDOWN:3");
+        sendSnapshot();
+        sleepMillis(933);
+        sendToBoth(Protocol.S_ROUND_END + "|box=" + boxId + "|COUNTDOWN:CYCLESTART");
+        sleepMillis(67);
+        sendToBoth(Protocol.S_ROUND_END + "|box=" + boxId + "|COUNTDOWN:2");
+        sendSnapshot();
+        sleepMillis(1000);
+        sendToBoth(Protocol.S_ROUND_END + "|box=" + boxId + "|COUNTDOWN:1");
+        sendSnapshot();
+        sleepMillis(1000);
         sendToBoth(Protocol.S_ROUND_END + "|box=" + boxId + "|COUNTDOWN:GO");
         sendSnapshot();
     }
@@ -489,8 +557,8 @@ if (wasDraw && config != null && config.maxConsecutiveDraws > 0 && consecutiveDr
 	 * Applies queued directional input requests to authoritative direction state.
 	 *
 	 * Amendment rules:
-	 *  - Opposite direction: do NOT reverse; apply a short slow effect.
-	 *  - Same direction: request a one-tick acceleration multiplier (client will typically resend while held).
+	 *  - Opposite direction: do NOT reverse; apply a one-tick slow multiplier.
+	 *  - Same direction: request a one-tick acceleration multiplier (client resends while held).
 	 *  - Orthogonal direction: turn normally.
 	 */
 	private void processDirectionalRequests() {
@@ -498,8 +566,7 @@ if (wasDraw && config != null && config.maxConsecutiveDraws > 0 && consecutiveDr
 		char reqA = aRequested;
 		if (isValidDir(reqA)) {
 			if (isOpposite(aDir, reqA)) {
-				aSlowTicks = SLOW_DURATION_TICKS;
-				aSpeedMultiplier = SLOW_MULTIPLIER;
+				aSlowRequested = true;
 			} else if (reqA == aDir) {
 				aAccelRequested = true;
 			} else {
@@ -511,8 +578,7 @@ if (wasDraw && config != null && config.maxConsecutiveDraws > 0 && consecutiveDr
 		char reqB = bRequested;
 		if (isValidDir(reqB)) {
 			if (isOpposite(bDir, reqB)) {
-				bSlowTicks = SLOW_DURATION_TICKS;
-				bSpeedMultiplier = SLOW_MULTIPLIER;
+				bSlowRequested = true;
 			} else if (reqB == bDir) {
 				bAccelRequested = true;
 			} else {
@@ -520,7 +586,8 @@ if (wasDraw && config != null && config.maxConsecutiveDraws > 0 && consecutiveDr
 			}
 		}
 
-		// Do not clear aRequested/bRequested here; the network layer may update them asynchronously.
+		aRequested = '\0';
+		bRequested = '\0';
 	}
 
 	/**
@@ -530,20 +597,12 @@ if (wasDraw && config != null && config.maxConsecutiveDraws > 0 && consecutiveDr
 	 */
 	private float getEffectiveSpeedMultiplier(boolean isPlayerA) {
 		if (isPlayerA) {
-			if (aSlowTicks > 0) {
-				aSlowTicks--;
-				if (aSlowTicks == 0) aSpeedMultiplier = 1.0f;
-				return aSpeedMultiplier;
-			}
+			if (aSlowRequested) return SLOW_MULTIPLIER;
 			if (aAccelRequested) return ACCEL_MULTIPLIER;
 			return 1.0f;
 		}
 
-		if (bSlowTicks > 0) {
-			bSlowTicks--;
-			if (bSlowTicks == 0) bSpeedMultiplier = 1.0f;
-			return bSpeedMultiplier;
-		}
+		if (bSlowRequested) return SLOW_MULTIPLIER;
 		if (bAccelRequested) return ACCEL_MULTIPLIER;
 		return 1.0f;
 	}
@@ -603,6 +662,13 @@ private static int clamp(int v, int min, int max) {
 
 private static String pad2(int n) {
         return (n < 10) ? ("0" + n) : Integer.toString(n);
+    }
+
+    private static String perspectiveResult(String winnerSide, String side) {
+        if ("NONE".equals(winnerSide)) {
+            return "DRAW";
+        }
+        return winnerSide.equals(side) ? "WIN" : "LOSE";
     }
 
     private static int[] dirToDelta(char dir) {

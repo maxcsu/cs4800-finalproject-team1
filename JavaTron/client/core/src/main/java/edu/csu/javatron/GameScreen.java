@@ -1,3 +1,9 @@
+/*
+ * AI Tools Use Transparency Disclosure:
+ * Primary prior GitHub handling credit: Bhawna Gogna.
+ * This file was handled by Maxwell Nield using Codex.
+ */
+
 package edu.csu.javatron;
 
 import com.badlogic.gdx.Gdx;
@@ -18,6 +24,8 @@ import java.util.Set;
 
 /** Game screen for rendering the match and handling input. */
 public class GameScreen extends ScreenAdapter {
+    private static final boolean ENABLE_SCOREBOARD = false;
+
     private final JavaTronGame game;
     private OrthographicCamera camera;
     private FitViewport viewport;
@@ -31,12 +39,37 @@ public class GameScreen extends ScreenAdapter {
     private int prevRoundNumber = -1; // track round changes to clear trails
     private float goDisplayTimer = 0f; // shows GO for 1.5 seconds then clears
     private Music gameMusic;
+    private Music cycleHum;
     private Sound turnSound;
+    private Sound crashSound;
+    private Sound winSound;
+    private Sound loseSound;
+    private Sound winAltSound;
+    private Sound gameOverSound;
+    private Sound cycleStartSound;
+    private Texture playerCycleTexture;
+    private Texture opponentCycleTexture;
+    private Texture explosionTexture1;
+    private Texture explosionTexture2;
+    private String lastCountdownMessage = null;
+    private long scheduledMusicStartAtMs = -1L;
+    private int handledRoundEventId = 0;
+    private boolean exitPromptVisible = false;
+    private boolean hideCycleA = false;
+    private boolean hideCycleB = false;
+    private float explosionAx = 0f;
+    private float explosionAy = 0f;
+    private float explosionBx = 0f;
+    private float explosionBy = 0f;
+    private long explosionAStartMs = -1L;
+    private long explosionBStartMs = -1L;
 
     // Arena constants — must match server Protocol.java
     private static final int ARENA_COLS = 48;
     private static final int ARENA_ROWS = 80;
     private static final int CELL = 10; // pixels per cell
+    private static final float GAMEPLAY_SPRITE_SCALE = 2f;
+    private static final long EXPLOSION_SWAP_MS = 250L;
 
     public GameScreen(JavaTronGame game) {
         this.game = game;
@@ -50,6 +83,10 @@ public class GameScreen extends ScreenAdapter {
         spriteBatch = new SpriteBatch();
         gridTexture = new Texture(Gdx.files.internal("gfx/tile/bgtile_indigo.png"));
         gridTexture.setWrap(Texture.TextureWrap.Repeat, Texture.TextureWrap.Repeat);
+        playerCycleTexture = loadCycleTexture(resolvePlayerColor());
+        opponentCycleTexture = loadCycleTexture(resolveOpponentColor());
+        explosionTexture1 = new Texture(Gdx.files.internal("gfx/expl1.png"));
+        explosionTexture2 = new Texture(Gdx.files.internal("gfx/expl2.png"));
         shapeRenderer = new ShapeRenderer();
         aTrails = new HashSet<>();
         bTrails = new HashSet<>();
@@ -59,17 +96,54 @@ public class GameScreen extends ScreenAdapter {
         try {
             gameMusic = Gdx.audio.newMusic(Gdx.files.internal("snd/mus_gameplay.mp3"));
             gameMusic.setLooping(true);
-            if (SettingsScreen.isAudioEnabled()) {
-                gameMusic.play();
-            }
         } catch (Exception e) {
             System.out.println("Could not load game music: " + e.getMessage());
+        }
+
+        try {
+            cycleHum = Gdx.audio.newMusic(Gdx.files.internal("snd/snd_cyclehum.mp3"));
+            cycleHum.setLooping(true);
+        } catch (Exception e) {
+            System.out.println("Could not load cycle hum: " + e.getMessage());
         }
 
         try {
             turnSound = Gdx.audio.newSound(Gdx.files.internal("snd/snd_cycleturn.mp3"));
         } catch (Exception e) {
             System.out.println("Could not load turn sound: " + e.getMessage());
+        }
+
+        try {
+            crashSound = Gdx.audio.newSound(Gdx.files.internal("snd/snd_crash.mp3"));
+            winSound = Gdx.audio.newSound(Gdx.files.internal("snd/snd_win.mp3"));
+            loseSound = Gdx.audio.newSound(Gdx.files.internal("snd/snd_lose.mp3"));
+            winAltSound = Gdx.audio.newSound(Gdx.files.internal("snd/snd_win_alt.mp3"));
+            gameOverSound = Gdx.audio.newSound(Gdx.files.internal("snd/snd_gameover.mp3"));
+            cycleStartSound = Gdx.audio.newSound(Gdx.files.internal("snd/snd_cyclestart.mp3"));
+        } catch (Exception e) {
+            System.out.println("Could not load one or more gameplay sounds: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void show() {
+        game.stopMenuMusic();
+        applyAudioSettings();
+        lastCountdownMessage = null;
+        scheduledMusicStartAtMs = -1L;
+        handledRoundEventId = game.latestRoundEventId;
+    }
+
+    public void applyAudioSettings() {
+        if (!game.isMusicEnabled()) {
+            if (gameMusic != null && gameMusic.isPlaying()) {
+                gameMusic.stop();
+            }
+        }
+        if (!game.isGameSoundEffectsEnabled()) {
+            if (cycleHum != null && cycleHum.isPlaying()) {
+                cycleHum.stop();
+            }
         }
     }
 
@@ -78,6 +152,11 @@ public class GameScreen extends ScreenAdapter {
         if (game.roundNumber != prevRoundNumber) {
             aTrails.clear();
             bTrails.clear();
+            resetCycleEffects();
+            game.roundResultText = null;
+            game.finalMatchResult = false;
+            game.latestRoundEventType = null;
+            game.latestWinnerSide = null;
             prevRoundNumber = game.roundNumber;
             prevAx = game.ax;
             prevAy = game.ay;
@@ -100,8 +179,26 @@ public class GameScreen extends ScreenAdapter {
 
     @Override
     public void render(float delta) {
+        if (Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.ESCAPE)) {
+            if (exitPromptVisible) {
+                confirmExitPrompt();
+            } else {
+                exitPromptVisible = true;
+            }
+        }
+        if (exitPromptVisible) {
+            if (Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.Y)) {
+                confirmExitPrompt();
+            } else if (Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.N)) {
+                exitPromptVisible = false;
+            }
+        }
 
-        updateTrails();
+        if (!exitPromptVisible || !game.practiceMode) {
+            updateTrails();
+        }
+
+        handleRoundAudioState();
 
         Gdx.gl.glClearColor(0, 0, 0, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
@@ -113,14 +210,14 @@ public class GameScreen extends ScreenAdapter {
         spriteBatch.begin();
         float worldWidth = viewport.getWorldWidth();
         float worldHeight = viewport.getWorldHeight();
-        float uRepeat = worldWidth / gridTexture.getWidth();
-        float vRepeat = worldHeight / gridTexture.getHeight();
+        float uRepeat = MenuVisuals.backgroundURepeat(worldWidth, gridTexture.getWidth());
+        float vRepeat = MenuVisuals.backgroundVRepeat(worldHeight, gridTexture.getHeight());
         spriteBatch.draw(gridTexture, 0, 0, worldWidth, worldHeight, 0, 0, uRepeat, vRepeat);
         spriteBatch.end();
 
         // Helper method to convert String color to LibGDX Color
-        Color colorA = getColorFromString(game.isPlayerA ? game.playerColor : game.oppColor, Color.BLUE);
-        Color colorB = getColorFromString(game.isPlayerA ? game.oppColor : game.playerColor, Color.RED);
+        Color colorA = CycleColors.get(resolveColorForSideA(), Color.valueOf("99d9ea"));
+        Color colorB = CycleColors.get(resolveColorForSideB(), Color.valueOf("ff4a68"));
 
         // Draw trails
         shapeRenderer.setProjectionMatrix(camera.combined);
@@ -140,11 +237,6 @@ public class GameScreen extends ScreenAdapter {
             shapeRenderer.rect(x * CELL, y * CELL, CELL, CELL);
         }
 
-        // Draw cycles
-        shapeRenderer.setColor(colorA);
-        shapeRenderer.rect(game.ax * CELL, game.ay * CELL, CELL, CELL);
-        shapeRenderer.setColor(colorB);
-        shapeRenderer.rect(game.bx * CELL, game.by * CELL, CELL, CELL);
         shapeRenderer.end();
 
         // Draw arena border walls (white outline) — this is the deadly edge!
@@ -153,36 +245,42 @@ public class GameScreen extends ScreenAdapter {
         shapeRenderer.rect(0, 0, ARENA_COLS * CELL, ARENA_ROWS * CELL);
         shapeRenderer.end();
 
-        // === Compact scoreboard in top-left corner ===
-        Gdx.gl.glEnable(GL20.GL_BLEND);
-        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
-        shapeRenderer.setProjectionMatrix(camera.combined);
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(0, 0, 0.15f, 0.78f);
-        float boxX = 5f, boxH = 120f, boxW = 180f;
-        float boxY = worldHeight - boxH - 5f;
-        shapeRenderer.rect(boxX, boxY, boxW, boxH);
-        shapeRenderer.end();
-        Gdx.gl.glDisable(GL20.GL_BLEND);
-
         spriteBatch.begin();
-        float tx = boxX + 8f;
-        float ty = boxY + boxH - 10f;
+        if (ENABLE_SCOREBOARD) {
+            Gdx.gl.glEnable(GL20.GL_BLEND);
+            Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+            shapeRenderer.setProjectionMatrix(camera.combined);
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+            shapeRenderer.setColor(0, 0, 0.15f, 0.78f);
+            float boxX = 5f, boxH = 120f, boxW = 180f;
+            float boxY = worldHeight - boxH - 5f;
+            shapeRenderer.rect(boxX, boxY, boxW, boxH);
+            shapeRenderer.end();
+            Gdx.gl.glDisable(GL20.GL_BLEND);
 
-        font.setColor(Color.CYAN);
-        font.draw(spriteBatch, "Round " + game.roundNumber, tx, ty);
-        font.setColor(Color.WHITE);
-        font.draw(spriteBatch, "Score:", tx, ty - 22);
-        font.setColor(colorA);
-        font.draw(spriteBatch, (game.isPlayerA ? "You" : game.oppName) + ": " + game.aWins, tx, ty - 44);
-        font.setColor(Color.WHITE);
-        font.draw(spriteBatch, "vs", tx, ty - 66);
-        font.setColor(colorB);
-        font.draw(spriteBatch, (game.isPlayerA ? game.oppName : "You") + ": " + game.bWins, tx, ty - 88);
+            float tx = boxX + 8f;
+            float ty = boxY + boxH - 10f;
+
+            font.setColor(Color.CYAN);
+            font.draw(spriteBatch, "Round " + game.roundNumber, tx, ty);
+            font.setColor(Color.WHITE);
+            font.draw(spriteBatch, "Score:", tx, ty - 22);
+            font.setColor(colorA);
+            font.draw(spriteBatch, (game.isPlayerA ? "You" : game.oppName) + ": " + game.aWins, tx, ty - 44);
+            font.setColor(Color.WHITE);
+            font.draw(spriteBatch, "vs", tx, ty - 66);
+            font.setColor(colorB);
+            font.draw(spriteBatch, (game.isPlayerA ? game.oppName : "You") + ": " + game.bWins, tx, ty - 88);
+        }
+
+        drawCycleOrExplosion(game.ax, game.ay, game.aDir, textureForSideA(), hideCycleA, explosionAx, explosionAy,
+                explosionAStartMs);
+        drawCycleOrExplosion(game.bx, game.by, game.bDir, textureForSideB(), hideCycleB, explosionBx, explosionBy,
+                explosionBStartMs);
 
         // Large countdown in center of screen
         String msg = game.countdownMessage;
-        if (msg != null) {
+        if (msg != null && !"CYCLESTART".equals(msg)) {
             if ("GO".equals(msg)) {
                 // Start or continue the GO timer
                 if (goDisplayTimer <= 0f)
@@ -198,25 +296,56 @@ public class GameScreen extends ScreenAdapter {
         }
 
         // Tick the GO display timer and auto-clear when expired
-        if (goDisplayTimer > 0f) {
+        if (goDisplayTimer > 0f && (!exitPromptVisible || !game.practiceMode)) {
             goDisplayTimer -= delta;
             if (goDisplayTimer <= 0f) {
                 game.countdownMessage = null;
                 game.countdownActive = false;
             }
         }
+
+        if (exitPromptVisible) {
+            font.setColor(Color.WHITE);
+            font.getData().setScale(2f);
+            font.draw(spriteBatch,
+                    game.getNetworkClient().isConnected() && !game.practiceMode
+                            ? "Disconnect from server?"
+                            : game.getNetworkClient().isConnected() ? "Return to Lobby?" : "Return to Menu?",
+                    worldWidth / 2f - 125f, worldHeight / 2f + 40f);
+            font.getData().setScale(1.4f);
+            font.draw(spriteBatch, "Y/N", worldWidth / 2f - 22f, worldHeight / 2f);
+            font.getData().setScale(1f);
+        } else if (game.roundResultText != null && !game.roundResultText.isBlank()) {
+            font.setColor(Color.WHITE);
+            font.getData().setScale(game.finalMatchResult ? 1.6f : 1.2f);
+            font.draw(spriteBatch, game.roundResultText, 30f, worldHeight / 2f + 20f, worldWidth - 60f,
+                    com.badlogic.gdx.utils.Align.center, true);
+            font.getData().setScale(1f);
+        }
         spriteBatch.end();
+
+        if (exitPromptVisible) {
+            return;
+        }
 
         // === INPUT: custom bind keys + Arrow key fallback ===
         // IMPORTANT: Server direction convention (libGDX y-up):
         // 'D' = +y = UP on screen 'U' = -y = DOWN on screen 'L'/'R' = left/right
-        boolean upPressed = Gdx.input.isKeyJustPressed(game.upKey)
+        boolean upPressed = Gdx.input.isKeyPressed(game.upKey)
+                || Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.UP);
+        boolean downPressed = Gdx.input.isKeyPressed(game.downKey)
+                || Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.DOWN);
+        boolean leftPressed = Gdx.input.isKeyPressed(game.leftKey)
+                || Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.LEFT);
+        boolean rightPressed = Gdx.input.isKeyPressed(game.rightKey)
+                || Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.RIGHT);
+        boolean upJustPressed = Gdx.input.isKeyJustPressed(game.upKey)
                 || Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.UP);
-        boolean downPressed = Gdx.input.isKeyJustPressed(game.downKey)
+        boolean downJustPressed = Gdx.input.isKeyJustPressed(game.downKey)
                 || Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.DOWN);
-        boolean leftPressed = Gdx.input.isKeyJustPressed(game.leftKey)
+        boolean leftJustPressed = Gdx.input.isKeyJustPressed(game.leftKey)
                 || Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.LEFT);
-        boolean rightPressed = Gdx.input.isKeyJustPressed(game.rightKey)
+        boolean rightJustPressed = Gdx.input.isKeyJustPressed(game.rightKey)
                 || Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.RIGHT);
 
         String turnDir = null;
@@ -231,42 +360,20 @@ public class GameScreen extends ScreenAdapter {
 
         if (turnDir != null) {
             game.getNetworkClient().send("C_TURN|" + turnDir);
-            if (turnSound != null && SettingsScreen.isAudioEnabled())
+            boolean movementSoundAllowed = game.roundResultText == null
+                    && (!game.countdownActive || "GO".equals(game.countdownMessage));
+            if (turnSound != null && game.isGameSoundEffectsEnabled()
+                    && movementSoundAllowed
+                    && (upJustPressed || downJustPressed || leftJustPressed || rightJustPressed))
                 turnSound.play(0.5f);
-        }
-    }
-
-    private Color getColorFromString(String colorStr, Color defaultColor) {
-        if (colorStr == null)
-            return defaultColor;
-        switch (colorStr.toUpperCase()) {
-            case "GREEN":
-                return Color.GREEN;
-            case "BLUE":
-                return Color.BLUE;
-            case "ORANGE":
-                return Color.ORANGE;
-            case "RED":
-                return Color.RED;
-            case "YELLOW":
-                return Color.YELLOW;
-            case "PURPLE":
-                return Color.PURPLE;
-            case "CYAN":
-                return Color.CYAN;
-            case "PINK":
-                return Color.PINK;
-            case "WHITE":
-                return Color.WHITE;
-            case "BLACK":
-                return Color.BLACK;
-            default:
-                return defaultColor;
         }
     }
 
     @Override
     public void resize(int width, int height) {
+        if (WindowAspectEnforcer.enforce(width, height)) {
+            return;
+        }
         viewport.update(width, height, true);
     }
 
@@ -280,8 +387,242 @@ public class GameScreen extends ScreenAdapter {
             gameMusic.stop();
             gameMusic.dispose();
         }
+        if (cycleHum != null) {
+            cycleHum.stop();
+            cycleHum.dispose();
+        }
         if (turnSound != null) {
             turnSound.dispose();
         }
+        if (playerCycleTexture != null) playerCycleTexture.dispose();
+        if (opponentCycleTexture != null) opponentCycleTexture.dispose();
+        if (explosionTexture1 != null) explosionTexture1.dispose();
+        if (explosionTexture2 != null) explosionTexture2.dispose();
+        if (crashSound != null) crashSound.dispose();
+        if (winSound != null) winSound.dispose();
+        if (loseSound != null) loseSound.dispose();
+        if (winAltSound != null) winAltSound.dispose();
+        if (gameOverSound != null) gameOverSound.dispose();
+        if (cycleStartSound != null) cycleStartSound.dispose();
+    }
+
+    private void confirmExitPrompt() {
+        exitPromptVisible = false;
+        stopGameplayLoopSounds();
+        game.playMenuBackSound();
+        if (game.getNetworkClient().isConnected()) {
+            if (game.practiceMode) {
+                game.matchPlayerColor = null;
+                game.matchOppColor = null;
+                game.showLobbyScreen();
+            } else {
+                game.playDisconnectSound();
+                game.getNetworkClient().disconnect();
+                game.showMainMenu();
+            }
+        } else {
+            game.practiceMode = false;
+            game.showMainMenu();
+        }
+    }
+
+    private void handleRoundAudioState() {
+        String currentCountdown = game.countdownMessage;
+        if (currentCountdown != null && !currentCountdown.equals(lastCountdownMessage)) {
+            if ("CYCLESTART".equals(currentCountdown)) {
+                if (cycleStartSound != null && game.isGameSoundEffectsEnabled()) {
+                    cycleStartSound.play(0.6f);
+                }
+            } else if ("GO".equals(currentCountdown)) {
+                scheduledMusicStartAtMs = System.currentTimeMillis() + 500L;
+                startCycleHum();
+            } else if ("3".equals(currentCountdown) || "2".equals(currentCountdown) || "1".equals(currentCountdown)) {
+                game.roundResultText = null;
+                game.finalMatchResult = false;
+                stopGameplayLoopSounds();
+            }
+            lastCountdownMessage = currentCountdown;
+        }
+
+        if (scheduledMusicStartAtMs > 0L && System.currentTimeMillis() >= scheduledMusicStartAtMs) {
+            scheduledMusicStartAtMs = -1L;
+            if (gameMusic != null && game.isMusicEnabled() && !gameMusic.isPlaying()) {
+                gameMusic.play();
+            }
+        }
+
+        if (game.latestRoundEventId != handledRoundEventId) {
+            handledRoundEventId = game.latestRoundEventId;
+            scheduledMusicStartAtMs = -1L;
+            stopGameplayLoopSounds();
+            updateExplosionState();
+            if (crashSound != null && game.isGameSoundEffectsEnabled()) {
+                crashSound.play(0.7f);
+            }
+            if (game.isGameSoundEffectsEnabled()) {
+                if (game.finalMatchResult) {
+                    if ("WIN".equalsIgnoreCase(game.latestRoundResult) && winAltSound != null) {
+                        winAltSound.play(0.7f);
+                    } else if ("LOSE".equalsIgnoreCase(game.latestRoundResult) && gameOverSound != null) {
+                        gameOverSound.play(0.7f);
+                    }
+                } else {
+                    if ("WIN".equalsIgnoreCase(game.latestRoundResult) && winSound != null) {
+                        winSound.play(0.7f);
+                    } else if ("LOSE".equalsIgnoreCase(game.latestRoundResult) && loseSound != null) {
+                        loseSound.play(0.7f);
+                    }
+                }
+            }
+        }
+    }
+
+    private void startCycleHum() {
+        if (cycleHum != null && game.isGameSoundEffectsEnabled() && !cycleHum.isPlaying()) {
+            cycleHum.play();
+        }
+    }
+
+    private void stopGameplayLoopSounds() {
+        if (gameMusic != null && gameMusic.isPlaying()) {
+            gameMusic.stop();
+        }
+        if (cycleHum != null && cycleHum.isPlaying()) {
+            cycleHum.stop();
+        }
+    }
+
+    private Texture loadCycleTexture(String colorName) {
+        return new Texture(Gdx.files.internal("gfx/lightcycle_" + normalizeCycleColor(colorName) + ".png"));
+    }
+
+    private float cycleDrawSize() {
+        return playerCycleTexture != null ? playerCycleTexture.getWidth() * GAMEPLAY_SPRITE_SCALE : 32f * GAMEPLAY_SPRITE_SCALE;
+    }
+
+    private String resolvePlayerColor() {
+        return game.matchPlayerColor != null ? game.matchPlayerColor : game.playerColor;
+    }
+
+    private String resolveOpponentColor() {
+        return game.matchOppColor != null ? game.matchOppColor : game.oppColor;
+    }
+
+    private String resolveColorForSideA() {
+        return game.isPlayerA ? resolvePlayerColor() : resolveOpponentColor();
+    }
+
+    private String resolveColorForSideB() {
+        return game.isPlayerA ? resolveOpponentColor() : resolvePlayerColor();
+    }
+
+    private Texture textureForSideA() {
+        return game.isPlayerA ? playerCycleTexture : opponentCycleTexture;
+    }
+
+    private Texture textureForSideB() {
+        return game.isPlayerA ? opponentCycleTexture : playerCycleTexture;
+    }
+
+    private String normalizeCycleColor(String colorName) {
+        if (colorName == null || colorName.isBlank()) {
+            return "white";
+        }
+        String normalized = colorName.trim().toLowerCase();
+        return switch (normalized) {
+            case "green", "blue", "orange", "red", "yellow", "purple", "cyan", "pink", "white", "black" -> normalized;
+            default -> "white";
+        };
+    }
+
+    private void drawCycleOrExplosion(int gridX, int gridY, char dir, Texture cycleTexture, boolean hidden,
+            float explosionX, float explosionY, long explosionStartMs) {
+        float drawSize = cycleDrawSize();
+        float drawX = gridX * CELL + (CELL * 0.5f) - (drawSize * 0.5f);
+        float drawY = gridY * CELL + (CELL * 0.5f) - (drawSize * 0.5f);
+        if (!hidden && cycleTexture != null) {
+            spriteBatch.draw(cycleTexture, drawX, drawY, drawSize * 0.5f, drawSize * 0.5f,
+                    drawSize, drawSize, 1f, 1f, directionRotation(dir), 0, 0,
+                    cycleTexture.getWidth(), cycleTexture.getHeight(), false, false);
+            return;
+        }
+        if (explosionStartMs > 0L) {
+            Texture explosionTexture = System.currentTimeMillis() - explosionStartMs < EXPLOSION_SWAP_MS
+                    ? explosionTexture1
+                    : explosionTexture2;
+            spriteBatch.draw(explosionTexture, explosionX, explosionY, drawSize, drawSize);
+        }
+    }
+
+    private float directionRotation(char dir) {
+        return switch (dir) {
+            case 'R' -> -90f;
+            case 'L' -> 90f;
+            case 'U' -> 180f;
+            default -> 0f;
+        };
+    }
+
+    private void updateExplosionState() {
+        if (!"COLLISION".equalsIgnoreCase(game.latestRoundEventType)) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        String winnerSide = game.latestWinnerSide == null ? "NONE" : game.latestWinnerSide;
+        if ("A".equalsIgnoreCase(winnerSide)) {
+            hideCycleB = true;
+            setExplosionForB(now);
+        } else if ("B".equalsIgnoreCase(winnerSide)) {
+            hideCycleA = true;
+            setExplosionForA(now);
+        } else {
+            hideCycleA = true;
+            hideCycleB = true;
+            setExplosionForA(now);
+            setExplosionForB(now);
+        }
+    }
+
+    private void setExplosionForA(long now) {
+        explosionAStartMs = now;
+        explosionAx = collisionDrawX(game.ax, game.aDir);
+        explosionAy = collisionDrawY(game.ay, game.aDir);
+    }
+
+    private void setExplosionForB(long now) {
+        explosionBStartMs = now;
+        explosionBx = collisionDrawX(game.bx, game.bDir);
+        explosionBy = collisionDrawY(game.by, game.bDir);
+    }
+
+    private float collisionDrawX(int gridX, char dir) {
+        return (gridX + directionDeltaX(dir)) * CELL + (CELL * 0.5f) - (cycleDrawSize() * 0.5f);
+    }
+
+    private float collisionDrawY(int gridY, char dir) {
+        return (gridY + directionDeltaY(dir)) * CELL + (CELL * 0.5f) - (cycleDrawSize() * 0.5f);
+    }
+
+    private int directionDeltaX(char dir) {
+        return switch (dir) {
+            case 'L' -> -1;
+            case 'R' -> 1;
+            default -> 0;
+        };
+    }
+
+    private int directionDeltaY(char dir) {
+        return switch (dir) {
+            case 'D' -> 1;
+            case 'U' -> -1;
+            default -> 0;
+        };
+    }
+
+    private void resetCycleEffects() {
+        hideCycleA = false;
+        hideCycleB = false;
+        explosionAStartMs = -1L;
+        explosionBStartMs = -1L;
     }
 }

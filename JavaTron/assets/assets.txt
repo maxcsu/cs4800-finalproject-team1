@@ -1,17 +1,22 @@
+gfx/Trail Colors.txt
 gfx/expl1.png
 gfx/expl2.png
-gfx/font/font_tile.png
+gfx/lightcycle_black.png
 gfx/lightcycle_blue.png
+gfx/lightcycle_cyan.png
 gfx/lightcycle_green.png
 gfx/lightcycle_orange.png
+gfx/lightcycle_pink.png
 gfx/lightcycle_purple.png
 gfx/lightcycle_red.png
 gfx/lightcycle_white.png
+gfx/lightcycle_yellow.png
 gfx/menu/title.png
 gfx/tile/bgtile.png
 gfx/tile/bgtile_indigo.png
 gfx/tile/bgtile_purple.png
 snd/0Placeholder stuff.txt
+snd/mp3_lengths.txt
 snd/mus_gameplay.mp3
 snd/mus_menu.mp3
 snd/snd_crash.mp3
