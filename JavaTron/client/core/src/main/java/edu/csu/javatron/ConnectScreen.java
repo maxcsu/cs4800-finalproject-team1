@@ -109,13 +109,13 @@ public class ConnectScreen extends ScreenAdapter {
         table.add(titleLabel).padBottom(30).row();
 
         // IP field
-        ipField = new TextField("localhost", skin);
+        ipField = new TextField(game.lastSuccessfulServerHost, skin);
         ipField.setMessageText("Server IP");
         registerSelectable(ipField, true);
         table.add(ipField).width(250).height(40).padBottom(10).row();
 
         // Port field
-        portField = new TextField("7777", skin);
+        portField = new TextField(String.valueOf(game.lastSuccessfulServerPort), skin);
         portField.setMessageText("Port");
         registerSelectable(portField, true);
         table.add(portField).width(250).height(40).padBottom(30).row();
@@ -147,6 +147,8 @@ public class ConnectScreen extends ScreenAdapter {
                             System.out.println("Connected successfully!");
                             
                             Gdx.app.postRunnable(() -> {
+                                game.lastSuccessfulServerHost = ip;
+                                game.lastSuccessfulServerPort = port;
                                 game.playNewGameSound();
                                 statusLabel.setText("Connected! Sent Handshake.");
                                 statusLabel.setColor(Color.GREEN);

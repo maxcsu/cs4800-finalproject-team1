@@ -67,6 +67,7 @@ public class GameScreen extends ScreenAdapter {
     private final BotController botController = new BotController();
     private float practiceTickAccumulator = 0f;
     private float practiceRoundResetDelay = 0f;
+    private float practiceMatchEndTransitionDelay = 0f;
     private String practicePendingTurnDir = null;
     private float practiceCountdownTimer = 0f;
     private int practiceCountdownStep = 0;
@@ -82,7 +83,8 @@ public class GameScreen extends ScreenAdapter {
     private static final float PRACTICE_COUNTDOWN_THREE_SECONDS = 0.933f;
     private static final float PRACTICE_COUNTDOWN_CYCLESTART_SECONDS = 0.067f;
     private static final float PRACTICE_COUNTDOWN_STANDARD_SECONDS = 1.0f;
-    private static final int ROUNDS_TO_WIN = 3;
+    private static final float PRACTICE_MATCH_END_SCREEN_DELAY_SECONDS = 6.5f;
+    private static final int ROUNDS_TO_WIN = 2;
 
     public GameScreen(JavaTronGame game) {
         this.game = game;
@@ -142,11 +144,13 @@ public class GameScreen extends ScreenAdapter {
     public void show() {
         game.stopMenuMusic();
         applyAudioSettings();
+        game.clearPendingNetworkSnapshots();
         lastCountdownMessage = null;
         scheduledMusicStartAtMs = -1L;
         handledRoundEventId = game.latestRoundEventId;
         practiceTickAccumulator = 0f;
         practiceRoundResetDelay = 0f;
+        practiceMatchEndTransitionDelay = 0f;
         practicePendingTurnDir = null;
         practiceCountdownTimer = 0f;
         practiceCountdownStep = 0;
@@ -169,6 +173,11 @@ public class GameScreen extends ScreenAdapter {
     }
 
     public void updateTrails() {
+        if (!game.practiceMode) {
+            updateNetworkTrails();
+            return;
+        }
+
         // Clear trails when a new round starts (positions jump back to spawn)
         if (game.roundNumber != prevRoundNumber) {
             aTrails.clear();
@@ -196,6 +205,69 @@ public class GameScreen extends ScreenAdapter {
         prevAy = game.ay;
         prevBx = game.bx;
         prevBy = game.by;
+    }
+
+    private void updateNetworkTrails() {
+        JavaTronGame.SnapshotFrame snapshot;
+        boolean consumedSnapshot = false;
+        while ((snapshot = game.pollPendingNetworkSnapshot()) != null) {
+            consumedSnapshot = true;
+            if (snapshot.roundNumber != prevRoundNumber) {
+                aTrails.clear();
+                bTrails.clear();
+                resetCycleEffects();
+                game.roundResultText = null;
+                game.finalMatchResult = false;
+                game.latestRoundEventType = null;
+                game.latestWinnerSide = null;
+                prevRoundNumber = snapshot.roundNumber;
+                prevAx = snapshot.ax;
+                prevAy = snapshot.ay;
+                prevBx = snapshot.bx;
+                prevBy = snapshot.by;
+                continue;
+            }
+
+            addTrailSegment(aTrails, prevAx, prevAy, snapshot.ax, snapshot.ay);
+            addTrailSegment(bTrails, prevBx, prevBy, snapshot.bx, snapshot.by);
+
+            prevAx = snapshot.ax;
+            prevAy = snapshot.ay;
+            prevBx = snapshot.bx;
+            prevBy = snapshot.by;
+        }
+
+        if (!consumedSnapshot && game.roundNumber != prevRoundNumber) {
+            aTrails.clear();
+            bTrails.clear();
+            resetCycleEffects();
+            game.roundResultText = null;
+            game.finalMatchResult = false;
+            game.latestRoundEventType = null;
+            game.latestWinnerSide = null;
+            prevRoundNumber = game.roundNumber;
+            prevAx = game.ax;
+            prevAy = game.ay;
+            prevBx = game.bx;
+            prevBy = game.by;
+        }
+    }
+
+    private void addTrailSegment(Set<Integer> trailSet, int fromX, int fromY, int toX, int toY) {
+        if (fromX == toX && fromY == toY) {
+            return;
+        }
+
+        int dx = Integer.compare(toX, fromX);
+        int dy = Integer.compare(toY, fromY);
+        int x = fromX;
+        int y = fromY;
+
+        while (x != toX || y != toY) {
+            trailSet.add(x * 100 + y);
+            x += dx;
+            y += dy;
+        }
     }
 
     @Override
@@ -399,6 +471,14 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void updatePracticeMatch(float delta) {
+        if (practiceMatchEndTransitionDelay > 0f) {
+            practiceMatchEndTransitionDelay = Math.max(0f, practiceMatchEndTransitionDelay - delta);
+            if (practiceMatchEndTransitionDelay == 0f) {
+                stopGameplayLoopSounds();
+                game.showPracticeRematchScreen();
+            }
+            return;
+        }
         if (practiceCountdownStep > 0) {
             practiceCountdownTimer = Math.max(0f, practiceCountdownTimer - delta);
             if (practiceCountdownTimer == 0f) {
@@ -430,7 +510,8 @@ public class GameScreen extends ScreenAdapter {
         char nextADir = applyPendingTurn(game.aDir, practicePendingTurnDir);
         practicePendingTurnDir = null;
         char nextBDir = botController.chooseDirection(game.bDir, game.bx, game.by, candidate ->
-                isPracticeDirectionSafe(game.bx, game.by, candidate, game.ax, game.ay));
+                isPracticeDirectionSafe(game.bx, game.by, candidate, game.ax, game.ay),
+                candidate -> practiceDirectionScore(game.bx, game.by, candidate, game.ax, game.ay));
 
         int nextAx = game.ax + directionDeltaX(nextADir);
         int nextAy = game.ay + directionDeltaY(nextADir);
@@ -482,10 +563,13 @@ public class GameScreen extends ScreenAdapter {
 
         boolean matchOver = game.aWins >= ROUNDS_TO_WIN || game.bWins >= ROUNDS_TO_WIN;
         if (matchOver) {
+            String matchSummary = (game.aWins > game.bWins ? "You" : "Bot")
+                    + " won the match. Final Score: " + game.aWins + "-" + game.bWins;
             game.finalMatchResult = true;
-            game.roundResultText = game.aWins > game.bWins ? "Practice win! Press ESC to return."
-                    : "Practice loss. Press ESC to return.";
+            game.winnerName = matchSummary;
+            game.roundResultText = matchSummary;
             practiceRoundResetDelay = 0f;
+            practiceMatchEndTransitionDelay = PRACTICE_MATCH_END_SCREEN_DELAY_SECONDS;
         } else {
             game.finalMatchResult = false;
             practiceRoundResetDelay = PRACTICE_ROUND_RESET_SECONDS;
@@ -511,6 +595,7 @@ public class GameScreen extends ScreenAdapter {
         game.countdownMessage = null;
         game.countdownActive = false;
         practiceTickAccumulator = 0f;
+        practiceMatchEndTransitionDelay = 0f;
         practicePendingTurnDir = null;
         beginPracticeCountdown();
     }
@@ -525,6 +610,30 @@ public class GameScreen extends ScreenAdapter {
             return false;
         }
         return nx != otherX || ny != otherY;
+    }
+
+    private int practiceDirectionScore(int fromX, int fromY, char dir, int otherX, int otherY) {
+        if (!isPracticeDirectionSafe(fromX, fromY, dir, otherX, otherY)) {
+            return Integer.MIN_VALUE;
+        }
+
+        int dx = directionDeltaX(dir);
+        int dy = directionDeltaY(dir);
+        int x = fromX;
+        int y = fromY;
+        int openSteps = 0;
+
+        while (true) {
+            x += dx;
+            y += dy;
+            if (isWallCollision(x, y) || isTrailCollision(x, y) || (x == otherX && y == otherY)) {
+                break;
+            }
+            openSteps++;
+        }
+
+        int centerBias = -Math.abs(x - (ARENA_COLS / 2));
+        return (openSteps * 100) + centerBias;
     }
 
     private boolean isWallCollision(int x, int y) {
@@ -694,11 +803,15 @@ public class GameScreen extends ScreenAdapter {
                         winAltSound.play(0.7f);
                     } else if ("LOSE".equalsIgnoreCase(game.latestRoundResult) && gameOverSound != null) {
                         gameOverSound.play(0.7f);
+                    } else if ("TIE".equalsIgnoreCase(game.latestRoundResult) && loseSound != null) {
+                        loseSound.play(0.7f);
                     }
                 } else {
                     if ("WIN".equalsIgnoreCase(game.latestRoundResult) && winSound != null) {
                         winSound.play(0.7f);
                     } else if ("LOSE".equalsIgnoreCase(game.latestRoundResult) && loseSound != null) {
+                        loseSound.play(0.7f);
+                    } else if ("TIE".equalsIgnoreCase(game.latestRoundResult) && loseSound != null) {
                         loseSound.play(0.7f);
                     }
                 }

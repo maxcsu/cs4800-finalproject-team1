@@ -12,8 +12,12 @@ import com.badlogic.gdx.audio.Music;
 import com.badlogic.gdx.audio.Sound;
 import edu.csu.javatron.client.net.NetworkClient;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * {@link com.badlogic.gdx.ApplicationListener} implementation shared by all
@@ -48,12 +52,15 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 	public String matchOppColor = null;
 	public int lobbyPlayerCount = 0;
 	public boolean practiceMode = false;
+	public boolean practiceStartedFromLobby = false;
 	public volatile boolean matchFoundPending = false;
 	public volatile String lobbyNoticeText = "";
 	public volatile String roundResultText = null;
 	public volatile boolean finalMatchResult = false;
 	public String connectStatusMessage = "";
 	public boolean connectStatusIsError = false;
+	public String lastSuccessfulServerHost = "localhost";
+	public int lastSuccessfulServerPort = 7777;
 	public volatile List<LeaderboardEntry> leaderboardEntries = Collections.emptyList();
 	public volatile int leaderboardVersion = 0;
 	public volatile boolean leaderboardLoading = false;
@@ -72,6 +79,7 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 	public volatile int latestRoundEventId = 0;
 	public volatile String latestRoundEventType = null;
 	public volatile String latestWinnerSide = null;
+	private final Queue<SnapshotFrame> pendingNetworkSnapshots = new ConcurrentLinkedQueue<>();
 
 	public boolean isPlayerA = true; // Which side this client is on
 	public String winnerName = ""; // Name of the match winner
@@ -84,6 +92,26 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 
 	public JavaTronGame() {
 		networkClient = new NetworkClient(this);
+	}
+
+	public static final class SnapshotFrame {
+		public final int ax, ay, bx, by;
+		public final char aDir, bDir;
+		public final int aWins, bWins;
+		public final int roundNumber;
+
+		public SnapshotFrame(int ax, int ay, int bx, int by, char aDir, char bDir, int aWins, int bWins,
+				int roundNumber) {
+			this.ax = ax;
+			this.ay = ay;
+			this.bx = bx;
+			this.by = by;
+			this.aDir = aDir;
+			this.bDir = bDir;
+			this.aWins = aWins;
+			this.bWins = bWins;
+			this.roundNumber = roundNumber;
+		}
 	}
 
 	public NetworkClient getNetworkClient() {
@@ -101,6 +129,15 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 		this.aWins = aWins;
 		this.bWins = bWins;
 		this.roundNumber = roundNumber;
+		pendingNetworkSnapshots.add(new SnapshotFrame(ax, ay, bx, by, aDir, bDir, aWins, bWins, roundNumber));
+	}
+
+	public SnapshotFrame pollPendingNetworkSnapshot() {
+		return pendingNetworkSnapshots.poll();
+	}
+
+	public void clearPendingNetworkSnapshots() {
+		pendingNetworkSnapshots.clear();
 	}
 
 	@Override
@@ -370,20 +407,36 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 		setScreen(new RematchVoteScreen(this));
 	}
 
+	public void showPracticeRematchScreen() {
+		setScreen(new PracticeRematchScreen(this));
+	}
+
 	public void showSettingsScreen() {
 		setScreen(new SettingsScreen(this));
 	}
 
 	public void startSingleplayerGame() {
+		startNewPracticeSession(false);
+	}
+
+	public void startLobbyPracticeGame() {
+		startNewPracticeSession(true);
+	}
+
+	public void restartPracticeGame() {
 		practiceMode = true;
-		networkClient.disconnect();
 		resetPracticeMatchState();
 		showGameScreen();
 	}
 
-	public void startLobbyPracticeGame() {
+	private void startNewPracticeSession(boolean fromLobby) {
 		practiceMode = true;
+		practiceStartedFromLobby = fromLobby;
+		if (!fromLobby) {
+			networkClient.disconnect();
+		}
 		clearMatchFoundNotice();
+		oppColor = randomBotColor(playerColor);
 		resetPracticeMatchState();
 		showGameScreen();
 	}
@@ -392,7 +445,6 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 		matchPlayerColor = null;
 		matchOppColor = null;
 		oppName = "Bot";
-		oppColor = "Red";
 		lobbyPlayerCount = 0;
 		isPlayerA = true;
 		winnerName = "";
@@ -407,6 +459,17 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 		by = 60;
 		aDir = 'D';
 		bDir = 'U';
+	}
+
+	private String randomBotColor(String playerColor) {
+		List<String> available = new ArrayList<>(List.of(
+				"Black", "Blue", "Cyan", "Green", "Orange",
+				"Pink", "Purple", "Red", "White", "Yellow"));
+		available.removeIf(color -> color.equalsIgnoreCase(playerColor));
+		if (available.isEmpty()) {
+			return "Red";
+		}
+		return available.get(ThreadLocalRandom.current().nextInt(available.size()));
 	}
 
 	private float pingTimer = 0f;
