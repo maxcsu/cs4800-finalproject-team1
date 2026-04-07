@@ -53,6 +53,7 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 	public int lobbyPlayerCount = 0;
 	public boolean practiceMode = false;
 	public boolean practiceStartedFromLobby = false;
+	public volatile boolean rematchVoteYesPending = false;
 	public volatile boolean matchFoundPending = false;
 	public volatile String lobbyNoticeText = "";
 	public volatile String roundResultText = null;
@@ -452,8 +453,13 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 		lobbyPlayerCount = 0;
 		isPlayerA = true;
 		winnerName = "";
+		roundResultText = null;
+		finalMatchResult = false;
 		countdownMessage = null;
 		countdownActive = false;
+		latestRoundResult = null;
+		latestRoundEventType = null;
+		latestWinnerSide = null;
 		aWins = 0;
 		bWins = 0;
 		roundNumber = 1;

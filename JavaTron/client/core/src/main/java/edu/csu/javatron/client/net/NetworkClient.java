@@ -146,6 +146,7 @@ public class NetworkClient {
             game.finalMatchResult = false;
             game.latestRoundEventType = null;
             game.latestWinnerSide = null;
+            game.rematchVoteYesPending = false;
             game.practiceMode = false;
             Gdx.app.postRunnable(() -> game.showGameScreen());
         } else if (message.startsWith(Protocol.S_MATCH_END)) {
@@ -173,13 +174,26 @@ public class NetworkClient {
                 }
             });
         } else if (message.startsWith(Protocol.S_RETURN_TO_LOBBY)) {
+            String reason = "";
+            String[] parts = message.split("\\|");
+            for (String part : parts) {
+                if (part.startsWith("reason=")) {
+                    reason = part.substring(7);
+                }
+            }
+            boolean shouldRequeue = ("no".equalsIgnoreCase(reason) || "disconnect".equalsIgnoreCase(reason))
+                    && game.getNetworkClient().isConnected();
             game.roundResultText = null;
             game.finalMatchResult = false;
+            game.rematchVoteYesPending = false;
             Gdx.app.postRunnable(() -> {
                 game.clearMatchFoundNotice();
                 game.matchPlayerColor = null;
                 game.matchOppColor = null;
                 game.showLobbyScreen();
+                if (shouldRequeue && game.getNetworkClient().isConnected()) {
+                    game.getNetworkClient().send(Protocol.C_FIND_MATCH);
+                }
             });
         } else if (message.startsWith(Protocol.S_LOBBY_STATUS)) {
             String[] parts = message.split("\\|");
@@ -286,11 +300,6 @@ public class NetworkClient {
                 bWins = Integer.parseInt(scores[1]);
             } else if (part.startsWith("round="))
                 roundNumber = Integer.parseInt(part.substring(6));
-        }
-        if (tick > 0 && !"GO".equals(game.countdownMessage)) {
-            // Any real game tick that isn't the GO message clears the countdown
-            game.countdownMessage = null;
-            game.countdownActive = false;
         }
         game.updateSnapshot(ax, ay, bx, by, aDir, bDir, aWins, bWins, roundNumber);
     }

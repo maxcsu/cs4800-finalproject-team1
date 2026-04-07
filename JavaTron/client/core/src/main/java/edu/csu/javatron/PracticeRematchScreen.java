@@ -129,7 +129,7 @@ public class PracticeRematchScreen extends ScreenAdapter {
         registerMenuButton(noBtn);
         table.add(noBtn).width(300).height(60).padBottom(20).row();
 
-        Label hintLabel = new Label("Press Y/N or Enter", skin);
+        Label hintLabel = new Label("Press Y or N", skin);
         table.add(hintLabel);
 
         com.badlogic.gdx.InputMultiplexer multiplexer = new com.badlogic.gdx.InputMultiplexer();
@@ -152,10 +152,6 @@ public class PracticeRematchScreen extends ScreenAdapter {
                 }
                 if (isMenuDown(keycode)) {
                     moveSelection(1);
-                    return true;
-                }
-                if (keycode == com.badlogic.gdx.Input.Keys.ENTER) {
-                    activateSelection();
                     return true;
                 }
                 return false;

@@ -107,6 +107,7 @@ public class RematchVoteScreen extends ScreenAdapter {
             public void changed(ChangeEvent e, Actor a) {
                 if (!voted) {
                     voted = true;
+                    game.rematchVoteYesPending = true;
                     game.playMenuConfirmSound();
                     game.getNetworkClient().send("C_REMATCH_VOTE|YES");
                 }
@@ -120,6 +121,7 @@ public class RematchVoteScreen extends ScreenAdapter {
             public void changed(ChangeEvent e, Actor a) {
                 if (!voted) {
                     voted = true;
+                    game.rematchVoteYesPending = false;
                     game.playMenuConfirmSound();
                     game.getNetworkClient().send("C_REMATCH_VOTE|NO");
                     game.getNetworkClient().disconnect();
@@ -185,6 +187,7 @@ public class RematchVoteScreen extends ScreenAdapter {
             timerLabel.setText(Math.max(0, (int) Math.ceil(timer)) + "s...");
             if (timer <= 0) {
                 voted = true;
+                game.rematchVoteYesPending = false;
                 game.getNetworkClient().send("C_REMATCH_VOTE|NO");
                 game.getNetworkClient().disconnect();
                 game.showMainMenu();

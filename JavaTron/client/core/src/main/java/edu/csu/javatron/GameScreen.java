@@ -159,6 +159,12 @@ public class GameScreen extends ScreenAdapter {
         }
     }
 
+    @Override
+    public void hide() {
+        scheduledMusicStartAtMs = -1L;
+        stopGameplayLoopSounds();
+    }
+
     public void applyAudioSettings() {
         if (!game.isMusicEnabled()) {
             if (gameMusic != null && gameMusic.isPlaying()) {
@@ -794,7 +800,8 @@ public class GameScreen extends ScreenAdapter {
             scheduledMusicStartAtMs = -1L;
             stopGameplayLoopSounds();
             updateExplosionState();
-            if (crashSound != null && game.isGameSoundEffectsEnabled()) {
+            if ("COLLISION".equalsIgnoreCase(game.latestRoundEventType)
+                    && crashSound != null && game.isGameSoundEffectsEnabled()) {
                 crashSound.play(0.7f);
             }
             if (game.isGameSoundEffectsEnabled()) {

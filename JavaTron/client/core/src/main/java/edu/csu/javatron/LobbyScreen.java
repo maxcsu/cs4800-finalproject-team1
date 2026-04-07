@@ -20,6 +20,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle;
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
+import com.badlogic.gdx.scenes.scene2d.Touchable;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
@@ -45,6 +46,10 @@ public class LobbyScreen extends ScreenAdapter {
     private float bgScrollX = 0f;
     private float bgScrollY = 0f;
     private float pulseTime = 0;
+    private TextButton practiceBtn;
+    private TextButton highScoresBtn;
+    private TextButton quitBtn;
+    private boolean matchFoundUiLocked = false;
 
     public LobbyScreen(JavaTronGame game) {
         this.game = game;
@@ -96,9 +101,10 @@ public class LobbyScreen extends ScreenAdapter {
         matchFoundLabel.setColor(Color.YELLOW);
         table.add(matchFoundLabel).padBottom(30).row();
 
-        TextButton practiceBtn = new TextButton("Bot Practice", skin);
+        practiceBtn = new TextButton("Bot Practice", skin);
         practiceBtn.addListener(new ChangeListener() {
             public void changed(ChangeEvent e, Actor a) {
+                if (game.matchFoundPending) return;
                 game.playMenuConfirmSound();
                 game.startLobbyPracticeGame();
             }
@@ -106,10 +112,11 @@ public class LobbyScreen extends ScreenAdapter {
         registerMenuButton(practiceBtn);
         table.add(practiceBtn).width(250).height(60).padBottom(20).row();
 
-        TextButton highScoresBtn = new TextButton("View Server High Scores", skin);
+        highScoresBtn = new TextButton("View Server High Scores", skin);
         highScoresBtn.addListener(new ChangeListener() {
             @Override
             public void changed(ChangeEvent event, Actor actor) {
+                if (game.matchFoundPending) return;
                 game.playMenuConfirmSound();
                 game.requestLeaderboardRefresh();
                 game.showLeaderboardScreen();
@@ -118,9 +125,10 @@ public class LobbyScreen extends ScreenAdapter {
         registerMenuButton(highScoresBtn);
         table.add(highScoresBtn).width(300).height(60).padBottom(20).row();
 
-        TextButton quitBtn = new TextButton("Quit to Menu", skin, "yellow");
+        quitBtn = new TextButton("Quit to Menu", skin, "yellow");
         quitBtn.addListener(new ChangeListener() {
             public void changed(ChangeEvent e, Actor a) {
+                if (game.matchFoundPending) return;
                 game.playDisconnectSound();
                 game.getNetworkClient().disconnect();
                 game.showMainMenu();
@@ -142,10 +150,16 @@ public class LobbyScreen extends ScreenAdapter {
                     return true;
                 }
                 if (keycode == com.badlogic.gdx.Input.Keys.ENTER) {
+                    if (game.matchFoundPending) {
+                        return true;
+                    }
                     activateSelection();
                     return true;
                 }
                 if (keycode == com.badlogic.gdx.Input.Keys.ESCAPE) {
+                    if (game.matchFoundPending) {
+                        return true;
+                    }
                     game.playMenuBackSound();
                     game.getNetworkClient().disconnect();
                     game.showMainMenu();
@@ -180,6 +194,7 @@ public class LobbyScreen extends ScreenAdapter {
         motdLabel.setText(game.serverMotd == null ? "" : game.serverMotd);
         playerCountLabel.setText("There are " + Math.max(1, game.lobbyPlayerCount) + " user(s)");
         matchFoundLabel.setText(game.matchFoundPending ? game.lobbyNoticeText : "");
+        applyMatchFoundUiState();
 
         spriteBatch.setProjectionMatrix(stage.getViewport().getCamera().combined);
         spriteBatch.begin();
@@ -262,6 +277,7 @@ public class LobbyScreen extends ScreenAdapter {
     }
 
     private void moveSelection(int delta) {
+        if (game.matchFoundPending) return;
         if (menuButtons.isEmpty()) return;
         int next = selectedIndex < 0 ? 0 : (selectedIndex + delta + menuButtons.size()) % menuButtons.size();
         setSelectedIndex(next, true);
@@ -282,5 +298,26 @@ public class LobbyScreen extends ScreenAdapter {
     private void activateSelection() {
         if (selectedIndex < 0 || selectedIndex >= menuButtons.size()) return;
         menuButtons.get(selectedIndex).fire(new ChangeListener.ChangeEvent());
+    }
+
+    private void applyMatchFoundUiState() {
+        if (matchFoundUiLocked == game.matchFoundPending) {
+            return;
+        }
+        matchFoundUiLocked = game.matchFoundPending;
+
+        boolean available = !matchFoundUiLocked;
+        practiceBtn.setVisible(available);
+        practiceBtn.setTouchable(available ? Touchable.enabled : Touchable.disabled);
+        highScoresBtn.setVisible(available);
+        highScoresBtn.setTouchable(available ? Touchable.enabled : Touchable.disabled);
+        quitBtn.setVisible(available);
+        quitBtn.setTouchable(available ? Touchable.enabled : Touchable.disabled);
+
+        if (available) {
+            setSelectedIndex(0, false);
+        } else {
+            selectedIndex = -1;
+        }
     }
 }

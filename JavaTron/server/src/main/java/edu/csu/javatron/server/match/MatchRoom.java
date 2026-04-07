@@ -488,6 +488,14 @@ if (wasDraw && config != null && config.maxConsecutiveDraws > 0 && consecutiveDr
     nextSpawnAy = 10;
     nextSpawnBy = Protocol.ARENA_ROWS - 11;
 
+    // Break perfect vertical symmetry so idle mirrored players do not still hit their
+    // opposite walls on the same tick after only an x-offset reseed.
+    if (java.util.concurrent.ThreadLocalRandom.current().nextBoolean()) {
+        nextSpawnAy += 1;
+    } else {
+        nextSpawnBy -= 1;
+    }
+
     useCustomSpawnsNextRound = true;
 
     if (logger != null) {
