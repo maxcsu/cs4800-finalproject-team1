@@ -122,6 +122,14 @@ public class PlayerStatsScreen extends ScreenAdapter {
         multiplexer.addProcessor(new com.badlogic.gdx.InputAdapter() {
             @Override
             public boolean keyDown(int keycode) {
+                if (isMenuUp(keycode)) {
+                    moveSelection(-1);
+                    return true;
+                }
+                if (isMenuDown(keycode)) {
+                    moveSelection(1);
+                    return true;
+                }
                 if (keycode == com.badlogic.gdx.Input.Keys.ESCAPE) {
                     game.playMenuBackSound();
                     game.showLeaderboardScreen();
@@ -276,6 +284,22 @@ public class PlayerStatsScreen extends ScreenAdapter {
                 setSelectedIndex(index, true);
             }
         });
+    }
+
+    private boolean isMenuUp(int keycode) {
+        return keycode == com.badlogic.gdx.Input.Keys.UP || keycode == game.upKey;
+    }
+
+    private boolean isMenuDown(int keycode) {
+        return keycode == com.badlogic.gdx.Input.Keys.DOWN || keycode == game.downKey;
+    }
+
+    private void moveSelection(int delta) {
+        if (menuButtons.isEmpty()) {
+            return;
+        }
+        int next = selectedIndex < 0 ? 0 : (selectedIndex + delta + menuButtons.size()) % menuButtons.size();
+        setSelectedIndex(next, true);
     }
 
     private void setSelectedIndex(int index, boolean playSound) {
