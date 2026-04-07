@@ -8,7 +8,10 @@ package edu.csu.javatron.client.net;
 
 import java.io.*;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
 import edu.csu.javatron.JavaTronGame;
+import edu.csu.javatron.LeaderboardEntry;
 import com.badlogic.gdx.Gdx;
 
 /** Client networking wrapper. */
@@ -188,6 +191,8 @@ public class NetworkClient {
             }
         } else if (message.startsWith(Protocol.S_PONG)) {
             lastServerHeardMillis = System.currentTimeMillis();
+        } else if (message.startsWith(Protocol.S_LEADERBOARD)) {
+            parseLeaderboard(message);
         } else if (message.startsWith(Protocol.S_ROUND_END)) {
             String[] parts = message.split("\\|");
             boolean collision = false;
@@ -223,6 +228,33 @@ public class NetworkClient {
             }
         }
         // TODO: Handle other messages
+    }
+
+    private void parseLeaderboard(String message) {
+        String[] parts = message.split("\\|");
+        List<LeaderboardEntry> entries = new ArrayList<>();
+        for (String part : parts) {
+            if (!part.startsWith("entry=")) {
+                continue;
+            }
+
+            String[] entryParts = part.substring(6).split("~", -1);
+            if (entryParts.length < 6) {
+                continue;
+            }
+
+            try {
+                entries.add(new LeaderboardEntry(
+                        Integer.parseInt(entryParts[0]),
+                        entryParts[1],
+                        entryParts[2],
+                        Integer.parseInt(entryParts[3]),
+                        Integer.parseInt(entryParts[4]),
+                        Double.parseDouble(entryParts[5])));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        game.setLeaderboardEntries(entries);
     }
 
     private void parseSnapshot(String message) {

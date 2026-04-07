@@ -9,6 +9,8 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input.Keys;
 import com.badlogic.gdx.Preferences;
 
+import java.util.UUID;
+
 /** Persistent client settings backed by LibGDX preferences. */
 public final class ClientSettings {
     private static final String PREFS_NAME = "javatron-client-settings";
@@ -21,6 +23,7 @@ public final class ClientSettings {
     private static final String KEY_RIGHT = "input.right";
     private static final String KEY_COLOR = "player.color";
     private static final String KEY_NAME = "player.name";
+    private static final String KEY_PLAYER_ID = "player.id";
 
     private final Preferences preferences;
 
@@ -106,6 +109,16 @@ public final class ClientSettings {
 
     public void setPlayerName(String name) {
         preferences.putString(KEY_NAME, name == null || name.isBlank() ? "Player" : name.trim());
+    }
+
+    public String getOrCreatePlayerId() {
+        String playerId = preferences.getString(KEY_PLAYER_ID, "");
+        if (playerId == null || playerId.isBlank()) {
+            playerId = UUID.randomUUID().toString();
+            preferences.putString(KEY_PLAYER_ID, playerId);
+            preferences.flush();
+        }
+        return playerId;
     }
 
     public void flush() {

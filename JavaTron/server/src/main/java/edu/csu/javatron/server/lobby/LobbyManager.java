@@ -7,6 +7,7 @@ package edu.csu.javatron.server.lobby;
 
 import edu.csu.javatron.server.ServerConfig;
 import edu.csu.javatron.server.ServerMain;
+import edu.csu.javatron.server.StatsManager;
 import edu.csu.javatron.server.match.MatchRoom;
 import edu.csu.javatron.server.match.MatchRules;
 import edu.csu.javatron.server.net.ClientSession;
@@ -15,6 +16,7 @@ import edu.csu.javatron.server.player.ColorResolver;
 
 import java.io.IOException;
 import java.net.Socket;
+import java.util.Locale;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -26,6 +28,7 @@ public final class LobbyManager {
     private final ServerConfig config;
     private final ServerConfig.Logger logger;
     private final ServerMain.ServerGui guiOrNull;
+    private final StatsManager statsManager;
 
     private final AtomicInteger nextPlayerNumber = new AtomicInteger(1);
 
@@ -39,10 +42,12 @@ public final class LobbyManager {
     // PlayerNumber -> BoxId (only when actively in a match)
     private final Map<Integer, Integer> playerToBox = new ConcurrentHashMap<>();
 
-    public LobbyManager(ServerConfig config, ServerConfig.Logger logger, ServerMain.ServerGui guiOrNull) {
+    public LobbyManager(ServerConfig config, ServerConfig.Logger logger, ServerMain.ServerGui guiOrNull,
+                        StatsManager statsManager) {
         this.config = config;
         this.logger = logger;
         this.guiOrNull = guiOrNull;
+        this.statsManager = statsManager;
         this.activeMatchesByBox = new MatchRoom[config.maxMatches + 1]; // 1..maxMatches
         startHeartbeatMonitor();
     }
@@ -161,16 +166,20 @@ public final class LobbyManager {
         String cmd = parts[0].trim();
 
         if (cmd.equalsIgnoreCase(Protocol.C_HELLO)) {
-            // C_HELLO|DesiredColor|Name
+            // C_HELLO|DesiredColor|Name|PersistentPlayerId
             if (parts.length >= 2) {
                 session.setRequestedColor(parts[1]);
             }
             if (parts.length >= 3) {
                 session.setPlayerName(parts[2]);
             }
+            if (parts.length >= 4) {
+                session.setPersistentPlayerId(parts[3]);
+            }
             logger.info(String.format("[Lobby] Player %02d says HELLO. RequestedColor=%s",
                     session.getPlayerNumber(), session.getRequestedColor()));
 
+            statsManager.registerPlayerSession(session);
             session.sendLine(Protocol.S_WELCOME + "|" + session.getPlayerNumber() + "|" + config.allowBotGames
                     + "|motd=" + config.serverMotd);
             sendLobbyStatusToAll();
@@ -192,6 +201,11 @@ public final class LobbyManager {
             // Waiting".
             enqueueForHumanMatch(session);
             tryStartMatches();
+            return;
+        }
+
+        if (cmd.equalsIgnoreCase(Protocol.C_REQUEST_LEADERBOARD)) {
+            sendLeaderboardTo(session);
             return;
         }
 
@@ -400,7 +414,7 @@ public final class LobbyManager {
         playerToBox.put(a.getPlayerNumber(), box);
         playerToBox.put(b.getPlayerNumber(), box);
 
-        MatchRoom room = new MatchRoom(config, logger, box, a, b, null, this::onMatchEnded);
+        MatchRoom room = new MatchRoom(config, logger, statsManager, box, a, b, null, this::onMatchEnded);
         activeMatchesByBox[box] = room;
 
         logger.info(String.format("[Box %d] Player %s %02d assigned to Box %d, versus player %s %02d.",
@@ -526,5 +540,30 @@ public final class LobbyManager {
         }
 
         waitingQueue.addAll(rebuilt);
+    }
+
+    private void sendLeaderboardTo(ClientSession session) {
+        List<StatsManager.LeaderboardEntry> entries = statsManager.getTopLeaderboardEntries(10);
+        StringBuilder message = new StringBuilder(Protocol.S_LEADERBOARD)
+                .append("|count=").append(entries.size());
+
+        for (StatsManager.LeaderboardEntry entry : entries) {
+            message.append("|entry=")
+                    .append(entry.lastPlayerNumber).append("~")
+                    .append(sanitize(entry.playerId)).append("~")
+                    .append(sanitize(entry.color)).append("~")
+                    .append(entry.wins).append("~")
+                    .append(entry.losses).append("~")
+                    .append(String.format(Locale.US, "%.2f", entry.winRate));
+        }
+
+        session.sendLine(message.toString());
+    }
+
+    private static String sanitize(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("~", "").replace("|", "").trim();
     }
 }

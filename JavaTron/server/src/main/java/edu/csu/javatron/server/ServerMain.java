@@ -87,6 +87,7 @@ public final class ServerMain {
 
         ServerTransport transport = null;
         LobbyManager lobbyManager = null;
+        StatsManager statsManager = null;
 
         LogFileSink logFileSink = null;
         DiscordWebhookSink webhookSink = null;
@@ -144,7 +145,8 @@ public final class ServerMain {
                 }
             }
 
-            lobbyManager = new LobbyManager(config, logger, gui);
+            statsManager = new StatsManager(logger);
+            lobbyManager = new LobbyManager(config, logger, gui, statsManager);
             transport = new ServerTransport(config, logger, lobbyManager);
 
             ServerTransport finalTransport = transport;
@@ -152,11 +154,15 @@ public final class ServerMain {
 
             if (gui != null) {
                 ServerGui finalGui = gui;
+                StatsManager finalStatsManager = statsManager;
                 finalGui.setOnClose(() -> {
                     running.set(false);
                     logger.info("Shutdown requested (GUI close).");
                     finalTransport.shutdown();
                     finalLobby.shutdown();
+                    if (finalStatsManager != null) {
+                        try { finalStatsManager.close(); } catch (Exception ignored) {}
+                    }
                     if (finalWebhookSink != null) finalWebhookSink.shutdown();
                     if (finalLogFileSink != null) finalLogFileSink.close();
                 });
@@ -193,6 +199,10 @@ public final class ServerMain {
 
         try {
             if (lobbyManager != null) lobbyManager.shutdown();
+        } catch (Exception ignored) {}
+
+        try {
+            if (statsManager != null) statsManager.close();
         } catch (Exception ignored) {}
 
         try {

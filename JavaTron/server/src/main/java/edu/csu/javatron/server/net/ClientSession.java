@@ -25,6 +25,7 @@ public final class ClientSession {
     private volatile String requestedColor = "Green";
     private volatile String activeColor = null; // non-null only while in a match
     private volatile String playerName = "Player";
+    private volatile String persistentPlayerId;
     private volatile boolean connected = true;
 
     // Heartbeat / liveness
@@ -81,6 +82,17 @@ public final class ClientSession {
         if (playerName != null && !playerName.isBlank()) {
             this.playerName = playerName.trim();
         }
+    }
+
+    public String getPersistentPlayerId() {
+        return persistentPlayerId;
+    }
+
+    public void setPersistentPlayerId(String persistentPlayerId) {
+        if (persistentPlayerId == null || persistentPlayerId.isBlank()) {
+            return;
+        }
+        this.persistentPlayerId = persistentPlayerId.trim();
     }
 
     public String getActiveColor() {

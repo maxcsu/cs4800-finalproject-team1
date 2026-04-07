@@ -150,7 +150,7 @@ public class ConnectScreen extends ScreenAdapter {
                                 game.playNewGameSound();
                                 statusLabel.setText("Connected! Sent Handshake.");
                                 statusLabel.setColor(Color.GREEN);
-                                game.getNetworkClient().send("C_HELLO|" + game.playerColor);
+                                game.getNetworkClient().send("C_HELLO|" + game.playerColor + "|" + game.playerName + "|" + game.playerId);
 
                                 // The spec requests C_FIND_MATCH to be sent here, skipping the old setup screen.
                                 game.getNetworkClient().send("C_FIND_MATCH");

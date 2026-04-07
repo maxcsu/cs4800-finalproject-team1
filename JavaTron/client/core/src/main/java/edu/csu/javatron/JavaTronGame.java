@@ -12,6 +12,9 @@ import com.badlogic.gdx.audio.Music;
 import com.badlogic.gdx.audio.Sound;
 import edu.csu.javatron.client.net.NetworkClient;
 
+import java.util.Collections;
+import java.util.List;
+
 /**
  * {@link com.badlogic.gdx.ApplicationListener} implementation shared by all
  * platforms.
@@ -37,6 +40,7 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 	// Player info
 	public String playerName = "Player";
 	public String playerColor = "Blue";
+	public String playerId = "";
 	public String oppName = "Opponent";
 	public String oppColor = "Red";
 	public String serverMotd = "";
@@ -50,6 +54,10 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 	public volatile boolean finalMatchResult = false;
 	public String connectStatusMessage = "";
 	public boolean connectStatusIsError = false;
+	public volatile List<LeaderboardEntry> leaderboardEntries = Collections.emptyList();
+	public volatile int leaderboardVersion = 0;
+	public volatile boolean leaderboardLoading = false;
+	public volatile String leaderboardStatusMessage = "";
 
 	// --- Game state: written by network thread, read by render thread ---
 	// Using volatile ensures the render thread always sees latest values (Java
@@ -100,6 +108,7 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 		settings = new ClientSettings();
 		playerName = settings.getPlayerName();
 		playerColor = settings.getPlayerColor();
+		playerId = settings.getOrCreatePlayerId();
 		upKey = settings.getUpKey();
 		downKey = settings.getDownKey();
 		leftKey = settings.getLeftKey();
@@ -298,6 +307,24 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 		lobbyNoticeText = "";
 	}
 
+	public void requestLeaderboardRefresh() {
+		leaderboardLoading = true;
+		leaderboardStatusMessage = "Loading leaderboard...";
+		if (networkClient != null && networkClient.isConnected()) {
+			networkClient.send("C_REQUEST_LEADERBOARD");
+		} else {
+			leaderboardLoading = false;
+			leaderboardStatusMessage = "Connect to a server to load leaderboard data.";
+		}
+	}
+
+	public void setLeaderboardEntries(List<LeaderboardEntry> entries) {
+		leaderboardEntries = entries == null ? Collections.emptyList() : List.copyOf(entries);
+		leaderboardLoading = false;
+		leaderboardStatusMessage = leaderboardEntries.isEmpty() ? "No match data recorded yet." : "";
+		leaderboardVersion++;
+	}
+
 	// Helper methods to switch screens
 	public void showMainMenu() {
 		matchPlayerColor = null;
@@ -328,6 +355,10 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 
 	public void showLobbyScreen() {
 		setScreen(new LobbyScreen(this));
+	}
+
+	public void showLeaderboardScreen() {
+		setScreen(new LeaderboardScreen(this));
 	}
 
 	public void showGameScreen() {

@@ -16,6 +16,7 @@ public final class Protocol {
 	public static final String C_TURN = "C_TURN";					// C_TURN|U/D/L/R
 	public static final String C_REMATCH_VOTE = "C_REMATCH_VOTE";	// C_REMATCH_VOTE
 	public static final String C_PING = "C_PING";					// C_PING|clientTimeMillis
+	public static final String C_REQUEST_LEADERBOARD = "C_REQUEST_LEADERBOARD";
 	
 	// Server to Client
 	public static final String S_WELCOME = "S_WELCOME";				// S_WELCOME
@@ -29,6 +30,7 @@ public final class Protocol {
 	public static final String S_REMATCH_STATUS = "S_REMATCH_STATUS";
 	public static final String S_RETURN_TO_LOBBY = "S_RETURN_TO_LOBBY";
 	public static final String S_PONG = "S_PONG";
+	public static final String S_LEADERBOARD = "S_LEADERBOARD";
 	public static final String S_ERROR = "S_ERROR";
 	
 	// Shared gameplay constants for gameplay between client and server

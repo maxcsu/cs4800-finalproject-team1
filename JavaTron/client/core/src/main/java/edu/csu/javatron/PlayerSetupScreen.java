@@ -158,7 +158,7 @@ public class PlayerSetupScreen extends ScreenAdapter {
                 game.playerName = playerName;
                 game.playerColor = selectedColor;
                 game.savePlayerIdentity();
-                game.getNetworkClient().send("C_HELLO|" + selectedColor + "|" + playerName);
+                game.getNetworkClient().send("C_HELLO|" + selectedColor + "|" + playerName + "|" + game.playerId);
                 game.showLobbyScreen();
             }
         });

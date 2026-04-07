@@ -6,6 +6,7 @@
 package edu.csu.javatron.server.match;
 
 import edu.csu.javatron.server.ServerConfig;
+import edu.csu.javatron.server.StatsManager;
 import edu.csu.javatron.server.net.ClientSession;
 import edu.csu.javatron.server.net.Protocol;
 import edu.csu.javatron.server.net.SnapshotSerializer;
@@ -65,6 +66,7 @@ public final class MatchRoom {
 
     private final ServerConfig config;
     private final ServerConfig.Logger logger;
+    private final StatsManager statsManager;
 
     private final int boxId;
     private final ClientSession a;
@@ -120,12 +122,13 @@ private int roundNumber = 1;
     private volatile boolean waitingForRematchVotes = false;
 
     // The previous versions had a server-side bot. Per spec clarification, bot games are CLIENT-SIDE ONLY.
-    public MatchRoom(ServerConfig config, ServerConfig.Logger logger, int boxId,
+    public MatchRoom(ServerConfig config, ServerConfig.Logger logger, StatsManager statsManager, int boxId,
                      ClientSession a, ClientSession b,
                      Object botUnused,
                      MatchEndedCallback onEnded) {
         this.config = Objects.requireNonNull(config);
         this.logger = Objects.requireNonNull(logger);
+        this.statsManager = Objects.requireNonNull(statsManager);
         this.boxId = boxId;
         this.a = a;
         this.b = b;
@@ -449,6 +452,10 @@ if (config != null && config.idleKickSeconds > 0) {
             if (logger != null) {
                 logger.info("[Box " + boxId + "] MATCH END: " + matchSummary);
             }
+
+            ClientSession winnerSession = (winnerNum == a.getPlayerNumber()) ? a : b;
+            ClientSession loserSession = (winnerSession == a) ? b : a;
+            statsManager.recordMatchResult(winnerSession, loserSession);
 
 
             // Enter rematch vote window

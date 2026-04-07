@@ -1,60 +1,60 @@
-/*
- * AI Tools Use Transparency Disclosure:
- * Primary prior GitHub handling credit: Bhawna Gogna.
- * This file was handled by Maxwell Nield using Codex.
- */
-
 package edu.csu.javatron;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.ScreenAdapter;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.scenes.scene2d.Actor;
-import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
+import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.ui.Label;
-import com.badlogic.gdx.scenes.scene2d.ui.Label.LabelStyle;
 import com.badlogic.gdx.scenes.scene2d.ui.Skin;
 import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle;
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
-import com.badlogic.gdx.graphics.g2d.BitmapFont;
-import com.badlogic.gdx.graphics.Color;
-import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.viewport.FitViewport;
+
 import java.util.ArrayList;
 import java.util.List;
 
-public class LobbyScreen extends ScreenAdapter {
+public class LeaderboardScreen extends ScreenAdapter {
     private final JavaTronGame game;
-    private Stage stage;
-    private Skin skin;
-    private Label playerCountLabel;
-    private Label motdLabel;
-    private Label matchFoundLabel;
-    private com.badlogic.gdx.graphics.g2d.SpriteBatch spriteBatch;
-    private com.badlogic.gdx.graphics.Texture bgTexture;
-    private com.badlogic.gdx.graphics.Texture logoTexture;
-    private ShapeRenderer shapeRenderer;
-    private TextButtonStyle defaultButtonStyle;
-    private TextButtonStyle yellowButtonStyle;
+    private final Stage stage;
+    private final Skin skin;
+    private final SpriteBatch spriteBatch;
+    private final Texture bgTexture;
+    private final Texture logoTexture;
+    private final ShapeRenderer shapeRenderer;
+    private final TextButtonStyle defaultButtonStyle;
+    private final TextButtonStyle yellowButtonStyle;
     private final List<TextButton> menuButtons = new ArrayList<>();
+    private final Table rowsTable;
+    private final Label headerLabel;
+    private final Label statusLabel;
     private int selectedIndex = -1;
+    private int renderedLeaderboardVersion = -1;
     private float bgScrollX = 0f;
     private float bgScrollY = 0f;
-    private float pulseTime = 0;
+    private float pulseTime = 0f;
 
-    public LobbyScreen(JavaTronGame game) {
+    public LeaderboardScreen(JavaTronGame game) {
         this.game = game;
-        stage = new Stage(new FitViewport(JavaTronGame.VIRTUAL_WIDTH, JavaTronGame.VIRTUAL_HEIGHT));
-        shapeRenderer = new ShapeRenderer();
+        this.stage = new Stage(new FitViewport(JavaTronGame.VIRTUAL_WIDTH, JavaTronGame.VIRTUAL_HEIGHT));
+        this.skin = new Skin();
+        this.shapeRenderer = new ShapeRenderer();
+        this.spriteBatch = new SpriteBatch();
 
-        skin = new Skin();
         BitmapFont font = new BitmapFont();
-        font.getData().setScale(1.5f);
+        font.getData().setScale(1.35f);
         skin.add("default-font", font);
+        skin.add("default", new Label.LabelStyle(font, Color.WHITE));
 
         defaultButtonStyle = new TextButtonStyle();
         defaultButtonStyle.font = font;
@@ -68,87 +68,56 @@ public class LobbyScreen extends ScreenAdapter {
         yellowButtonStyle.downFontColor = Color.CYAN;
         skin.add("yellow", yellowButtonStyle);
 
-        skin.add("default", new LabelStyle(font, Color.WHITE));
+        bgTexture = new Texture(Gdx.files.internal("gfx/tile/bgtile_indigo.png"));
+        bgTexture.setWrap(Texture.TextureWrap.Repeat, Texture.TextureWrap.Repeat);
+        logoTexture = new Texture(Gdx.files.internal("gfx/menu/title.png"));
 
-        spriteBatch = new com.badlogic.gdx.graphics.g2d.SpriteBatch();
-        bgTexture = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("gfx/tile/bgtile_indigo.png"));
-        bgTexture.setWrap(com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat,
-                com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat);
-        logoTexture = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("gfx/menu/title.png"));
+        Table root = new Table();
+        root.setFillParent(true);
+        root.padTop(128);
+        root.padLeft(26);
+        root.padRight(26);
+        stage.addActor(root);
 
-        Table table = new Table();
-        table.setFillParent(true);
-        table.padTop(120);
-        stage.addActor(table);
+        Label titleLabel = new Label("Top 10 Scores", skin);
+        titleLabel.setFontScale(1.6f);
+        titleLabel.setAlignment(Align.center);
+        root.add(titleLabel).padBottom(16).row();
 
-        motdLabel = new Label("", skin);
-        motdLabel.setWrap(true);
-        motdLabel.setAlignment(com.badlogic.gdx.utils.Align.center);
-        table.add(motdLabel).width(360).padBottom(18).row();
+        statusLabel = new Label("", skin);
+        statusLabel.setAlignment(Align.center);
+        root.add(statusLabel).padBottom(14).row();
 
-        table.add(new Label("IN LOBBY", skin)).padBottom(10).row();
-        table.add(new Label("Waiting for players...", skin)).padBottom(40).row();
+        headerLabel = new Label(formatHeader(), skin);
+        headerLabel.setAlignment(Align.center);
+        root.add(headerLabel).padBottom(10).row();
 
-        playerCountLabel = new Label("There are " + Math.max(1, game.lobbyPlayerCount) + " user(s)", skin);
-        table.add(playerCountLabel).padBottom(40).row();
+        rowsTable = new Table();
+        rowsTable.defaults().padBottom(8).left();
+        root.add(rowsTable).expandY().top().row();
 
-        matchFoundLabel = new Label("", skin);
-        matchFoundLabel.setColor(Color.YELLOW);
-        table.add(matchFoundLabel).padBottom(30).row();
-
-        TextButton practiceBtn = new TextButton("Bot Practice", skin);
-        practiceBtn.addListener(new ChangeListener() {
-            public void changed(ChangeEvent e, Actor a) {
-                game.playMenuConfirmSound();
-                game.startLobbyPracticeGame();
-            }
-        });
-        registerMenuButton(practiceBtn);
-        table.add(practiceBtn).width(250).height(60).padBottom(20).row();
-
-        TextButton highScoresBtn = new TextButton("View Server High Scores", skin);
-        highScoresBtn.addListener(new ChangeListener() {
+        TextButton returnBtn = new TextButton("Return to Lobby", skin, "yellow");
+        returnBtn.addListener(new ChangeListener() {
             @Override
             public void changed(ChangeEvent event, Actor actor) {
-                game.playMenuConfirmSound();
-                game.requestLeaderboardRefresh();
-                game.showLeaderboardScreen();
+                game.playMenuBackSound();
+                game.showLobbyScreen();
             }
         });
-        registerMenuButton(highScoresBtn);
-        table.add(highScoresBtn).width(300).height(60).padBottom(20).row();
-
-        TextButton quitBtn = new TextButton("Quit to Menu", skin, "yellow");
-        quitBtn.addListener(new ChangeListener() {
-            public void changed(ChangeEvent e, Actor a) {
-                game.playDisconnectSound();
-                game.getNetworkClient().disconnect();
-                game.showMainMenu();
-            }
-        });
-        registerMenuButton(quitBtn);
-        table.add(quitBtn).width(250).height(60).row();
+        registerMenuButton(returnBtn);
+        root.add(returnBtn).width(280).height(60).padTop(18);
 
         com.badlogic.gdx.InputMultiplexer multiplexer = new com.badlogic.gdx.InputMultiplexer();
         multiplexer.addProcessor(new com.badlogic.gdx.InputAdapter() {
             @Override
             public boolean keyDown(int keycode) {
-                if (isMenuUp(keycode)) {
-                    moveSelection(-1);
-                    return true;
-                }
-                if (isMenuDown(keycode)) {
-                    moveSelection(1);
+                if (keycode == com.badlogic.gdx.Input.Keys.ESCAPE) {
+                    game.playMenuBackSound();
+                    game.showLobbyScreen();
                     return true;
                 }
                 if (keycode == com.badlogic.gdx.Input.Keys.ENTER) {
                     activateSelection();
-                    return true;
-                }
-                if (keycode == com.badlogic.gdx.Input.Keys.ESCAPE) {
-                    game.playMenuBackSound();
-                    game.getNetworkClient().disconnect();
-                    game.showMainMenu();
                     return true;
                 }
                 return false;
@@ -163,7 +132,11 @@ public class LobbyScreen extends ScreenAdapter {
         game.playMenuMusic();
         bgScrollX = game.sharedMenuScrollX;
         bgScrollY = game.sharedMenuScrollY;
+        renderedLeaderboardVersion = -1;
         setSelectedIndex(0, false);
+        if (!game.leaderboardLoading && game.leaderboardEntries.isEmpty()) {
+            game.requestLeaderboardRefresh();
+        }
     }
 
     @Override
@@ -176,10 +149,11 @@ public class LobbyScreen extends ScreenAdapter {
         game.sharedMenuScrollX = bgScrollX;
         game.sharedMenuScrollY = bgScrollY;
         pulseTime += delta;
-        float pulse = 0.7f + 0.3f * (float) Math.sin(pulseTime * 2.5f);
-        motdLabel.setText(game.serverMotd == null ? "" : game.serverMotd);
-        playerCountLabel.setText("There are " + Math.max(1, game.lobbyPlayerCount) + " user(s)");
-        matchFoundLabel.setText(game.matchFoundPending ? game.lobbyNoticeText : "");
+
+        if (renderedLeaderboardVersion != game.leaderboardVersion) {
+            rebuildRows();
+            renderedLeaderboardVersion = game.leaderboardVersion;
+        }
 
         spriteBatch.setProjectionMatrix(stage.getViewport().getCamera().combined);
         spriteBatch.begin();
@@ -189,17 +163,17 @@ public class LobbyScreen extends ScreenAdapter {
         float vRepeat = MenuVisuals.backgroundVRepeat(worldHeight, bgTexture.getHeight());
         spriteBatch.draw(bgTexture, 0, 0, worldWidth, worldHeight, bgScrollX, bgScrollY,
                 bgScrollX + uRepeat, bgScrollY + vRepeat);
-        float logoW = 380;
+        float logoW = 360;
         float logoH = logoW * ((float) logoTexture.getHeight() / logoTexture.getWidth());
-        spriteBatch.draw(logoTexture, worldWidth / 2 - logoW / 2, worldHeight - logoH - 50, logoW, logoH);
+        spriteBatch.draw(logoTexture, worldWidth / 2 - logoW / 2, worldHeight - logoH - 48, logoW, logoH);
         spriteBatch.end();
 
-        // Pulsing Grid
         if (MenuVisuals.ENABLE_GLOW) {
+            float pulse = 0.7f + 0.3f * (float) Math.sin(pulseTime * 2.5f);
             Gdx.gl.glEnable(GL20.GL_BLEND);
             Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE);
             shapeRenderer.setProjectionMatrix(stage.getViewport().getCamera().combined);
-            shapeRenderer.begin(com.badlogic.gdx.graphics.glutils.ShapeRenderer.ShapeType.Line);
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
             int gridSpacing = 64;
             for (int pass = 0; pass < 4; pass++) {
                 float alpha = (0.2f / (pass + 1)) * pulse;
@@ -224,12 +198,39 @@ public class LobbyScreen extends ScreenAdapter {
         stage.draw();
     }
 
+    private void rebuildRows() {
+        rowsTable.clearChildren();
+        statusLabel.setText(game.leaderboardLoading ? "Loading leaderboard..." : game.leaderboardStatusMessage);
+        headerLabel.setVisible(!game.leaderboardEntries.isEmpty());
+
+        List<LeaderboardEntry> entries = game.leaderboardEntries;
+        for (int i = 0; i < entries.size(); i++) {
+            LeaderboardEntry entry = entries.get(i);
+            Label rowLabel = new Label(formatRow(i + 1, entry), skin);
+            rowLabel.setColor(CycleColors.get(entry.color, Color.YELLOW));
+            rowsTable.add(rowLabel).left().row();
+        }
+    }
+
+    private String formatHeader() {
+        return String.format("%-4s %-15s %-6s %-8s %-8s", "Rank", "Player", "Wins", "Losses", "Rate");
+    }
+
+    private String formatRow(int rank, LeaderboardEntry entry) {
+        return String.format("#%02d %-15s %-6s %-8s %-8s",
+                rank,
+                entry.getPlayerDisplay(),
+                entry.getWinsDisplay(),
+                entry.getLossesDisplay(),
+                entry.getRateDisplay());
+    }
+
     @Override
-    public void resize(int w, int h) {
-        if (WindowAspectEnforcer.enforce(w, h)) {
+    public void resize(int width, int height) {
+        if (WindowAspectEnforcer.enforce(width, height)) {
             return;
         }
-        stage.getViewport().update(w, h, true);
+        stage.getViewport().update(width, height, true);
     }
 
     @Override
@@ -253,23 +254,13 @@ public class LobbyScreen extends ScreenAdapter {
         });
     }
 
-    private boolean isMenuUp(int keycode) {
-        return keycode == com.badlogic.gdx.Input.Keys.UP || keycode == game.upKey;
-    }
-
-    private boolean isMenuDown(int keycode) {
-        return keycode == com.badlogic.gdx.Input.Keys.DOWN || keycode == game.downKey;
-    }
-
-    private void moveSelection(int delta) {
-        if (menuButtons.isEmpty()) return;
-        int next = selectedIndex < 0 ? 0 : (selectedIndex + delta + menuButtons.size()) % menuButtons.size();
-        setSelectedIndex(next, true);
-    }
-
     private void setSelectedIndex(int index, boolean playSound) {
-        if (index < 0 || index >= menuButtons.size()) return;
-        if (selectedIndex == index) return;
+        if (index < 0 || index >= menuButtons.size()) {
+            return;
+        }
+        if (selectedIndex == index) {
+            return;
+        }
         selectedIndex = index;
         for (int i = 0; i < menuButtons.size(); i++) {
             menuButtons.get(i).setStyle(i == selectedIndex ? yellowButtonStyle : defaultButtonStyle);
@@ -280,7 +271,9 @@ public class LobbyScreen extends ScreenAdapter {
     }
 
     private void activateSelection() {
-        if (selectedIndex < 0 || selectedIndex >= menuButtons.size()) return;
+        if (selectedIndex < 0 || selectedIndex >= menuButtons.size()) {
+            return;
+        }
         menuButtons.get(selectedIndex).fire(new ChangeListener.ChangeEvent());
     }
 }
