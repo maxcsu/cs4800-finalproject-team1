@@ -120,3 +120,4 @@ JavaTron/Run
 JavaTron/server/server.cfg
 *.lnk
 finddiff.py
+JavaTron/leaderboard.db
