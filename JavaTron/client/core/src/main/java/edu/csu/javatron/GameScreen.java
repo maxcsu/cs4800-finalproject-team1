@@ -25,7 +25,7 @@ import java.util.Set;
 
 /** Game screen for rendering the match and handling input. */
 public class GameScreen extends ScreenAdapter {
-    private static final boolean ENABLE_SCOREBOARD = false;
+    private static final boolean ENABLE_SCOREBOARD = true;
 
     private final JavaTronGame game;
     private OrthographicCamera camera;
@@ -68,6 +68,8 @@ public class GameScreen extends ScreenAdapter {
     private float practiceTickAccumulator = 0f;
     private float practiceRoundResetDelay = 0f;
     private String practicePendingTurnDir = null;
+    private float practiceCountdownTimer = 0f;
+    private int practiceCountdownStep = 0; // 0=idle, 3,2,1, GO(4)
 
     // Arena constants — must match server Protocol.java
     private static final int ARENA_COLS = 48;
@@ -143,6 +145,8 @@ public class GameScreen extends ScreenAdapter {
         practiceTickAccumulator = 0f;
         practiceRoundResetDelay = 0f;
         practicePendingTurnDir = null;
+        practiceCountdownTimer = 0f;
+        practiceCountdownStep = 0;
     }
 
     public void applyAudioSettings() {
@@ -310,6 +314,14 @@ public class GameScreen extends ScreenAdapter {
             font.getData().setScale(1f);
         }
 
+        // Practice mode label
+        if (game.practiceMode && !exitPromptVisible) {
+            font.setColor(Color.CYAN);
+            font.getData().setScale(1.1f);
+            font.draw(spriteBatch, "OFFLINE PRACTICE", 10f, worldHeight - 10f);
+            font.getData().setScale(1f);
+        }
+
         // Tick the GO display timer and auto-clear when expired
         if (goDisplayTimer > 0f && (!exitPromptVisible || !game.practiceMode)) {
             goDisplayTimer -= delta;
@@ -389,6 +401,14 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void updatePracticeMatch(float delta) {
+        // Handle 3-2-1-GO countdown before ticks
+        if (practiceCountdownStep > 0) {
+            practiceCountdownTimer -= delta;
+            if (practiceCountdownTimer <= 0f) {
+                advancePracticeCountdown();
+            }
+            return;
+        }
         if (practiceRoundResetDelay > 0f) {
             practiceRoundResetDelay = Math.max(0f, practiceRoundResetDelay - delta);
             if (practiceRoundResetDelay == 0f) {
@@ -493,6 +513,7 @@ public class GameScreen extends ScreenAdapter {
         game.latestWinnerSide = null;
         game.countdownMessage = null;
         game.countdownActive = false;
+        beginPracticeCountdown();
     }
 
     private boolean isPracticeDirectionSafe(int fromX, int fromY, char dir, int otherX, int otherY) {
@@ -529,6 +550,43 @@ public class GameScreen extends ScreenAdapter {
                 || (currentDir == 'D' && candidateDir == 'U')
                 || (currentDir == 'L' && candidateDir == 'R')
                 || (currentDir == 'R' && candidateDir == 'L');
+    }
+
+    private void beginPracticeCountdown() {
+        practiceCountdownStep = 3; // 3..2..1..GO
+        practiceCountdownTimer = 0.9f;
+        game.countdownMessage = "3";
+        game.countdownActive = true;
+        lastCountdownMessage = null; // force audio logic to trigger
+        handleRoundAudioState();
+    }
+
+    private void advancePracticeCountdown() {
+        if (practiceCountdownStep == 3) {
+            practiceCountdownStep = 2;
+            practiceCountdownTimer = 0.9f;
+            game.countdownMessage = "2";
+            lastCountdownMessage = null;
+            handleRoundAudioState();
+        } else if (practiceCountdownStep == 2) {
+            practiceCountdownStep = 1;
+            practiceCountdownTimer = 0.9f;
+            game.countdownMessage = "1";
+            lastCountdownMessage = null;
+            handleRoundAudioState();
+        } else if (practiceCountdownStep == 1) {
+            practiceCountdownStep = 4; // GO
+            practiceCountdownTimer = 0.6f;
+            game.countdownMessage = "GO";
+            lastCountdownMessage = null;
+            handleRoundAudioState();
+        } else {
+            // countdown finished
+            practiceCountdownStep = 0;
+            practiceCountdownTimer = 0f;
+            game.countdownMessage = null;
+            game.countdownActive = false;
+        }
     }
 
     @Override
