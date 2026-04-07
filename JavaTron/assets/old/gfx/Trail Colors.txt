@@ -1,0 +1,10 @@
+Black - #000000
+Blue - #99d9ea
+Cyan - #c4fff0
+Green - #6af059
+Orange - #ff7f27
+Pink - #ff4ab3
+Purple - #ba5bee
+Red - #ff4a68
+White - #ffffff
+Yellow - #f0e859
