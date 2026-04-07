@@ -18,6 +18,7 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.audio.Music;
 import com.badlogic.gdx.audio.Sound;
+import edu.csu.javatron.client.bot.BotController;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -63,6 +64,10 @@ public class GameScreen extends ScreenAdapter {
     private float explosionBy = 0f;
     private long explosionAStartMs = -1L;
     private long explosionBStartMs = -1L;
+    private final BotController botController = new BotController();
+    private float practiceTickAccumulator = 0f;
+    private float practiceRoundResetDelay = 0f;
+    private String practicePendingTurnDir = null;
 
     // Arena constants — must match server Protocol.java
     private static final int ARENA_COLS = 48;
@@ -70,6 +75,9 @@ public class GameScreen extends ScreenAdapter {
     private static final int CELL = 10; // pixels per cell
     private static final float GAMEPLAY_SPRITE_SCALE = 2f;
     private static final long EXPLOSION_SWAP_MS = 250L;
+    private static final float PRACTICE_TICK_SECONDS = 1f / 12f;
+    private static final float PRACTICE_ROUND_RESET_SECONDS = 1.1f;
+    private static final int ROUNDS_TO_WIN = 3;
 
     public GameScreen(JavaTronGame game) {
         this.game = game;
@@ -132,6 +140,9 @@ public class GameScreen extends ScreenAdapter {
         lastCountdownMessage = null;
         scheduledMusicStartAtMs = -1L;
         handledRoundEventId = game.latestRoundEventId;
+        practiceTickAccumulator = 0f;
+        practiceRoundResetDelay = 0f;
+        practicePendingTurnDir = null;
     }
 
     public void applyAudioSettings() {
@@ -192,6 +203,10 @@ public class GameScreen extends ScreenAdapter {
             } else if (Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.N)) {
                 exitPromptVisible = false;
             }
+        }
+
+        if (game.practiceMode && !exitPromptVisible) {
+            updatePracticeMatch(delta);
         }
 
         if (!exitPromptVisible || !game.practiceMode) {
@@ -359,7 +374,11 @@ public class GameScreen extends ScreenAdapter {
             turnDir = "R";
 
         if (turnDir != null) {
-            game.getNetworkClient().send("C_TURN|" + turnDir);
+            if (game.practiceMode) {
+                practicePendingTurnDir = turnDir;
+            } else {
+                game.getNetworkClient().send("C_TURN|" + turnDir);
+            }
             boolean movementSoundAllowed = game.roundResultText == null
                     && (!game.countdownActive || "GO".equals(game.countdownMessage));
             if (turnSound != null && game.isGameSoundEffectsEnabled()
@@ -367,6 +386,149 @@ public class GameScreen extends ScreenAdapter {
                     && (upJustPressed || downJustPressed || leftJustPressed || rightJustPressed))
                 turnSound.play(0.5f);
         }
+    }
+
+    private void updatePracticeMatch(float delta) {
+        if (practiceRoundResetDelay > 0f) {
+            practiceRoundResetDelay = Math.max(0f, practiceRoundResetDelay - delta);
+            if (practiceRoundResetDelay == 0f) {
+                startPracticeRound();
+            }
+            return;
+        }
+        if (game.roundResultText != null) {
+            return;
+        }
+        practiceTickAccumulator += delta;
+        while (practiceTickAccumulator >= PRACTICE_TICK_SECONDS) {
+            practiceTickAccumulator -= PRACTICE_TICK_SECONDS;
+            runPracticeTick();
+            if (game.roundResultText != null) {
+                break;
+            }
+        }
+    }
+
+    private void runPracticeTick() {
+        char nextADir = applyPendingTurn(game.aDir, practicePendingTurnDir);
+        practicePendingTurnDir = null;
+        char nextBDir = botController.chooseDirection(game.bDir, game.bx, game.by, candidate ->
+                isPracticeDirectionSafe(game.bx, game.by, candidate, game.ax, game.ay));
+
+        int nextAx = game.ax + directionDeltaX(nextADir);
+        int nextAy = game.ay + directionDeltaY(nextADir);
+        int nextBx = game.bx + directionDeltaX(nextBDir);
+        int nextBy = game.by + directionDeltaY(nextBDir);
+
+        boolean aCrash = isWallCollision(nextAx, nextAy)
+                || isTrailCollision(nextAx, nextAy)
+                || (nextAx == game.bx && nextAy == game.by);
+        boolean bCrash = isWallCollision(nextBx, nextBy)
+                || isTrailCollision(nextBx, nextBy)
+                || (nextBx == game.ax && nextBy == game.ay);
+
+        if (nextAx == nextBx && nextAy == nextBy) {
+            aCrash = true;
+            bCrash = true;
+        } else if (nextAx == game.bx && nextAy == game.by && nextBx == game.ax && nextBy == game.ay) {
+            aCrash = true;
+            bCrash = true;
+        }
+
+        if (aCrash || bCrash) {
+            handlePracticeRoundEnd(aCrash, bCrash);
+            return;
+        }
+
+        game.aDir = nextADir;
+        game.bDir = nextBDir;
+        game.ax = nextAx;
+        game.ay = nextAy;
+        game.bx = nextBx;
+        game.by = nextBy;
+    }
+
+    private void handlePracticeRoundEnd(boolean aCrash, boolean bCrash) {
+        String winnerSide;
+        if (aCrash && bCrash) {
+            winnerSide = "NONE";
+            game.roundResultText = "Tie round!";
+        } else if (aCrash) {
+            winnerSide = "B";
+            game.bWins++;
+            game.roundResultText = "Bot won round " + game.roundNumber + ".";
+        } else {
+            winnerSide = "A";
+            game.aWins++;
+            game.roundResultText = "You won round " + game.roundNumber + ".";
+        }
+
+        boolean matchOver = game.aWins >= ROUNDS_TO_WIN || game.bWins >= ROUNDS_TO_WIN;
+        if (matchOver) {
+            game.finalMatchResult = true;
+            game.roundResultText = game.aWins > game.bWins ? "Practice win! Press ESC to return."
+                    : "Practice loss. Press ESC to return.";
+            practiceRoundResetDelay = 0f;
+        } else {
+            game.finalMatchResult = false;
+            practiceRoundResetDelay = PRACTICE_ROUND_RESET_SECONDS;
+        }
+
+        game.latestRoundEventType = "COLLISION";
+        game.latestWinnerSide = winnerSide;
+        game.latestRoundResult = "A".equals(winnerSide) ? "WIN" : "B".equals(winnerSide) ? "LOSE" : "TIE";
+        game.latestRoundEventId++;
+    }
+
+    private void startPracticeRound() {
+        game.roundNumber++;
+        game.ax = 24;
+        game.ay = 20;
+        game.bx = 24;
+        game.by = 60;
+        game.aDir = 'D';
+        game.bDir = 'U';
+        game.roundResultText = null;
+        game.latestRoundEventType = null;
+        game.latestWinnerSide = null;
+        game.countdownMessage = null;
+        game.countdownActive = false;
+    }
+
+    private boolean isPracticeDirectionSafe(int fromX, int fromY, char dir, int otherX, int otherY) {
+        if (isReverseDir(dir, game.bDir)) {
+            return false;
+        }
+        int nx = fromX + directionDeltaX(dir);
+        int ny = fromY + directionDeltaY(dir);
+        if (isWallCollision(nx, ny) || isTrailCollision(nx, ny)) {
+            return false;
+        }
+        return nx != otherX || ny != otherY;
+    }
+
+    private boolean isWallCollision(int x, int y) {
+        return x < 0 || x >= ARENA_COLS || y < 0 || y >= ARENA_ROWS;
+    }
+
+    private boolean isTrailCollision(int x, int y) {
+        int encoded = x * 100 + y;
+        return aTrails.contains(encoded) || bTrails.contains(encoded);
+    }
+
+    private char applyPendingTurn(char currentDir, String turnDir) {
+        if (turnDir == null || turnDir.isBlank()) {
+            return currentDir;
+        }
+        char candidate = turnDir.charAt(0);
+        return isReverseDir(currentDir, candidate) ? currentDir : candidate;
+    }
+
+    private boolean isReverseDir(char currentDir, char candidateDir) {
+        return (currentDir == 'U' && candidateDir == 'D')
+                || (currentDir == 'D' && candidateDir == 'U')
+                || (currentDir == 'L' && candidateDir == 'R')
+                || (currentDir == 'R' && candidateDir == 'L');
     }
 
     @Override
