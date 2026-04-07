@@ -239,7 +239,7 @@ public class NetworkClient {
             }
 
             String[] entryParts = part.substring(6).split("~", -1);
-            if (entryParts.length < 6) {
+            if (entryParts.length < 7) {
                 continue;
             }
 
@@ -250,7 +250,8 @@ public class NetworkClient {
                         entryParts[2],
                         Integer.parseInt(entryParts[3]),
                         Integer.parseInt(entryParts[4]),
-                        Double.parseDouble(entryParts[5])));
+                        Double.parseDouble(entryParts[5]),
+                        Integer.parseInt(entryParts[6])));
             } catch (NumberFormatException ignored) {
             }
         }

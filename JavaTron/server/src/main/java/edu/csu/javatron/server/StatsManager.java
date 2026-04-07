@@ -12,7 +12,6 @@ import java.sql.ResultSetMetaData;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 public final class StatsManager implements AutoCloseable {
 
@@ -24,9 +23,10 @@ public final class StatsManager implements AutoCloseable {
         public final int wins;
         public final int losses;
         public final double winRate;
+        public final int derezzes;
 
         public LeaderboardEntry(String playerId, int lastPlayerNumber, String playerName, String color,
-                                int wins, int losses, double winRate) {
+                                int wins, int losses, double winRate, int derezzes) {
             this.playerId = playerId;
             this.lastPlayerNumber = lastPlayerNumber;
             this.playerName = playerName;
@@ -34,6 +34,7 @@ public final class StatsManager implements AutoCloseable {
             this.wins = wins;
             this.losses = losses;
             this.winRate = winRate;
+            this.derezzes = derezzes;
         }
     }
 
@@ -61,10 +62,19 @@ public final class StatsManager implements AutoCloseable {
                         color TEXT NOT NULL,
                         wins INTEGER NOT NULL DEFAULT 0,
                         losses INTEGER NOT NULL DEFAULT 0,
-                        win_rate REAL NOT NULL DEFAULT 0.0
+                        win_rate REAL NOT NULL DEFAULT 0.0,
+                        derezzes INTEGER NOT NULL DEFAULT 0
+                    )
+                    """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS player_derezzes (
+                        winner_player_id TEXT NOT NULL,
+                        defeated_player_id TEXT NOT NULL,
+                        PRIMARY KEY (winner_player_id, defeated_player_id)
                     )
                     """);
             migrateWinRateColumn(connection, statement);
+            migrateDerezzesColumns(connection, statement);
             migrateLegacyPlayerIds(connection);
         } catch (SQLException ex) {
             throw new IllegalStateException("Unable to initialize leaderboard database.", ex);
@@ -98,6 +108,7 @@ public final class StatsManager implements AutoCloseable {
             upsertPlayerIdentity(connection, loser, loserId);
             incrementWin(connection, winnerId);
             incrementLoss(connection, loserId);
+            recordUniqueDerezz(connection, winnerId, loserId);
 
             connection.commit();
         } catch (SQLException ex) {
@@ -108,9 +119,9 @@ public final class StatsManager implements AutoCloseable {
     public synchronized List<LeaderboardEntry> getTopLeaderboardEntries(int limit) {
         List<LeaderboardEntry> entries = new ArrayList<>();
         String sql = """
-                SELECT player_id, last_player_number, player_name, color, wins, losses, win_rate
+                SELECT player_id, last_player_number, player_name, color, wins, losses, win_rate, derezzes
                 FROM leaderboard
-                ORDER BY win_rate DESC, wins DESC, losses ASC, player_id ASC
+                ORDER BY wins DESC, win_rate DESC, losses ASC, player_id ASC
                 LIMIT ?
                 """;
 
@@ -126,7 +137,8 @@ public final class StatsManager implements AutoCloseable {
                             resultSet.getString("color"),
                             resultSet.getInt("wins"),
                             resultSet.getInt("losses"),
-                            readWinRate(resultSet)));
+                            readWinRate(resultSet),
+                            resultSet.getInt("derezzes")));
                 }
             }
         } catch (SQLException ex) {
@@ -144,7 +156,7 @@ public final class StatsManager implements AutoCloseable {
         List<LeaderboardEntry> legacyEntries = new ArrayList<>();
 
         try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT player_id, last_player_number, player_name, color, wins, losses, win_rate
+                SELECT player_id, last_player_number, player_name, color, wins, losses, win_rate, derezzes
                 FROM leaderboard
                 """);
              ResultSet resultSet = statement.executeQuery()) {
@@ -161,7 +173,8 @@ public final class StatsManager implements AutoCloseable {
                         resultSet.getString("color"),
                         resultSet.getInt("wins"),
                         resultSet.getInt("losses"),
-                        readWinRate(resultSet)));
+                        readWinRate(resultSet),
+                        resultSet.getInt("derezzes")));
             }
         }
 
@@ -185,9 +198,10 @@ public final class StatsManager implements AutoCloseable {
         try {
             Integer existingWins = null;
             Integer existingLosses = null;
+            Integer existingDerezzes = null;
 
             try (PreparedStatement selectStatement = connection.prepareStatement("""
-                    SELECT wins, losses
+                    SELECT wins, losses, derezzes
                     FROM leaderboard
                     WHERE player_id = ?
                     """)) {
@@ -196,6 +210,7 @@ public final class StatsManager implements AutoCloseable {
                     if (resultSet.next()) {
                         existingWins = resultSet.getInt("wins");
                         existingLosses = resultSet.getInt("losses");
+                        existingDerezzes = resultSet.getInt("derezzes");
                     }
                 }
             }
@@ -210,12 +225,14 @@ public final class StatsManager implements AutoCloseable {
                     updateIdStatement.setString(2, legacyEntry.playerId);
                     updateIdStatement.executeUpdate();
                 }
+                migrateDerezzReferences(connection, legacyEntry.playerId, normalizedPlayerId);
             } else {
                 try (PreparedStatement mergeStatement = connection.prepareStatement("""
                         UPDATE leaderboard
                         SET wins = ?,
                             losses = ?,
                             win_rate = ?,
+                            derezzes = ?,
                             player_name = ?,
                             color = ?,
                             last_player_number = ?
@@ -226,12 +243,15 @@ public final class StatsManager implements AutoCloseable {
                     mergeStatement.setInt(1, mergedWins);
                     mergeStatement.setInt(2, mergedLosses);
                     mergeStatement.setDouble(3, calculateWinRate(mergedWins, mergedLosses));
-                    mergeStatement.setString(4, legacyEntry.playerName);
-                    mergeStatement.setString(5, legacyEntry.color);
-                    mergeStatement.setInt(6, legacyEntry.lastPlayerNumber);
-                    mergeStatement.setString(7, normalizedPlayerId);
+                    mergeStatement.setInt(4, (existingDerezzes == null ? 0 : existingDerezzes) + legacyEntry.derezzes);
+                    mergeStatement.setString(5, legacyEntry.playerName);
+                    mergeStatement.setString(6, legacyEntry.color);
+                    mergeStatement.setInt(7, legacyEntry.lastPlayerNumber);
+                    mergeStatement.setString(8, normalizedPlayerId);
                     mergeStatement.executeUpdate();
                 }
+
+                migrateDerezzReferences(connection, legacyEntry.playerId, normalizedPlayerId);
 
                 try (PreparedStatement deleteLegacyStatement = connection.prepareStatement("""
                         DELETE FROM leaderboard
@@ -253,8 +273,8 @@ public final class StatsManager implements AutoCloseable {
 
     private void upsertPlayerIdentity(Connection connection, ClientSession session, String playerId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO leaderboard (player_id, last_player_number, player_name, color, wins, losses, win_rate)
-                VALUES (?, ?, ?, ?, 0, 0, 0.0)
+                INSERT INTO leaderboard (player_id, last_player_number, player_name, color, wins, losses, win_rate, derezzes)
+                VALUES (?, ?, ?, ?, 0, 0, 0.0, 0)
                 ON CONFLICT(player_id) DO UPDATE SET
                     last_player_number = excluded.last_player_number,
                     player_name = excluded.player_name,
@@ -265,6 +285,30 @@ public final class StatsManager implements AutoCloseable {
             statement.setString(3, session.getPlayerName());
             statement.setString(4, session.getRequestedColor());
             statement.executeUpdate();
+        }
+    }
+
+    private void recordUniqueDerezz(Connection connection, String winnerId, String loserId) throws SQLException {
+        if (winnerId == null || winnerId.isBlank() || loserId == null || loserId.isBlank()) {
+            return;
+        }
+        try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT OR IGNORE INTO player_derezzes (winner_player_id, defeated_player_id)
+                VALUES (?, ?)
+                """)) {
+            statement.setString(1, winnerId);
+            statement.setString(2, loserId);
+            int inserted = statement.executeUpdate();
+            if (inserted > 0) {
+                try (PreparedStatement updateWinner = connection.prepareStatement("""
+                        UPDATE leaderboard
+                        SET derezzes = derezzes + 1
+                        WHERE player_id = ?
+                        """)) {
+                    updateWinner.setString(1, winnerId);
+                    updateWinner.executeUpdate();
+                }
+            }
         }
     }
 
@@ -336,6 +380,89 @@ public final class StatsManager implements AutoCloseable {
                     """)) {
                 updateStatement.executeUpdate();
             }
+        }
+    }
+
+    private void migrateDerezzesColumns(Connection connection, Statement statement) throws SQLException {
+        boolean hasDerezzes = false;
+
+        try (ResultSet columns = statement.executeQuery("PRAGMA table_info(leaderboard)")) {
+            while (columns.next()) {
+                String columnName = columns.getString("name");
+                if ("derezzes".equalsIgnoreCase(columnName)) {
+                    hasDerezzes = true;
+                }
+            }
+        }
+
+        if (!hasDerezzes) {
+            statement.executeUpdate("ALTER TABLE leaderboard ADD COLUMN derezzes INTEGER NOT NULL DEFAULT 0");
+        }
+
+        try (PreparedStatement rebuildStatement = connection.prepareStatement("""
+                UPDATE leaderboard
+                SET derezzes = (
+                    SELECT COUNT(*)
+                    FROM player_derezzes d
+                    WHERE d.winner_player_id = leaderboard.player_id
+                )
+                """)) {
+            rebuildStatement.executeUpdate();
+        }
+    }
+
+    private void migrateDerezzReferences(Connection connection, String oldPlayerId, String newPlayerId) throws SQLException {
+        if (oldPlayerId == null || newPlayerId == null || oldPlayerId.equals(newPlayerId)) {
+            return;
+        }
+
+        try (PreparedStatement winnerRows = connection.prepareStatement("""
+                SELECT defeated_player_id
+                FROM player_derezzes
+                WHERE winner_player_id = ?
+                """)) {
+            winnerRows.setString(1, oldPlayerId);
+            try (ResultSet resultSet = winnerRows.executeQuery()) {
+                while (resultSet.next()) {
+                    try (PreparedStatement insert = connection.prepareStatement("""
+                            INSERT OR IGNORE INTO player_derezzes (winner_player_id, defeated_player_id)
+                            VALUES (?, ?)
+                            """)) {
+                        insert.setString(1, newPlayerId);
+                        insert.setString(2, resultSet.getString("defeated_player_id"));
+                        insert.executeUpdate();
+                    }
+                }
+            }
+        }
+
+        try (PreparedStatement defeatedRows = connection.prepareStatement("""
+                SELECT winner_player_id
+                FROM player_derezzes
+                WHERE defeated_player_id = ?
+                """)) {
+            defeatedRows.setString(1, oldPlayerId);
+            try (ResultSet resultSet = defeatedRows.executeQuery()) {
+                while (resultSet.next()) {
+                    try (PreparedStatement insert = connection.prepareStatement("""
+                            INSERT OR IGNORE INTO player_derezzes (winner_player_id, defeated_player_id)
+                            VALUES (?, ?)
+                            """)) {
+                        insert.setString(1, resultSet.getString("winner_player_id"));
+                        insert.setString(2, newPlayerId);
+                        insert.executeUpdate();
+                    }
+                }
+            }
+        }
+
+        try (PreparedStatement delete = connection.prepareStatement("""
+                DELETE FROM player_derezzes
+                WHERE winner_player_id = ? OR defeated_player_id = ?
+                """)) {
+            delete.setString(1, oldPlayerId);
+            delete.setString(2, oldPlayerId);
+            delete.executeUpdate();
         }
     }
 

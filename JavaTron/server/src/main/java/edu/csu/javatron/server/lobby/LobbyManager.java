@@ -554,7 +554,8 @@ public final class LobbyManager {
                     .append(sanitize(entry.color)).append("~")
                     .append(entry.wins).append("~")
                     .append(entry.losses).append("~")
-                    .append(String.format(Locale.US, "%.2f", entry.winRate));
+                    .append(String.format(Locale.US, "%.2f", entry.winRate)).append("~")
+                    .append(entry.derezzes);
         }
 
         session.sendLine(message.toString());

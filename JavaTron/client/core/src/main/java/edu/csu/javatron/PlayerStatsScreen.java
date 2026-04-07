@@ -24,11 +24,11 @@ import com.badlogic.gdx.utils.viewport.FitViewport;
 import java.util.ArrayList;
 import java.util.List;
 
-public class LeaderboardScreen extends ScreenAdapter {
-    private static final float RANK_COL_WIDTH = 64f;
-    private static final float PLAYER_COL_WIDTH = 150f;
-    private static final float LOSSES_COL_WIDTH = 92f;
-    private static final float WINS_COL_WIDTH = 74f;
+public class PlayerStatsScreen extends ScreenAdapter {
+    private static final float PLAYER_COL_WIDTH = 148f;
+    private static final float LOSE_RATE_COL_WIDTH = 102f;
+    private static final float WIN_RATE_COL_WIDTH = 94f;
+    private static final float DEREZZES_COL_WIDTH = 88f;
 
     private final JavaTronGame game;
     private final Stage stage;
@@ -41,7 +41,6 @@ public class LeaderboardScreen extends ScreenAdapter {
     private final TextButtonStyle yellowButtonStyle;
     private final List<TextButton> menuButtons = new ArrayList<>();
     private final Table rowsTable;
-    private final Label headerLabel;
     private final Label statusLabel;
     private int selectedIndex = -1;
     private int renderedLeaderboardVersion = -1;
@@ -49,7 +48,7 @@ public class LeaderboardScreen extends ScreenAdapter {
     private float bgScrollY = 0f;
     private float pulseTime = 0f;
 
-    public LeaderboardScreen(JavaTronGame game) {
+    public PlayerStatsScreen(JavaTronGame game) {
         this.game = game;
         this.stage = new Stage(new FitViewport(JavaTronGame.VIRTUAL_WIDTH, JavaTronGame.VIRTUAL_HEIGHT));
         this.skin = new Skin();
@@ -80,11 +79,11 @@ public class LeaderboardScreen extends ScreenAdapter {
         Table root = new Table();
         root.setFillParent(true);
         root.padTop(128);
-        root.padLeft(18);
-        root.padRight(18);
+        root.padLeft(12);
+        root.padRight(12);
         stage.addActor(root);
 
-        Label titleLabel = new Label("Top 10 Scores", skin);
+        Label titleLabel = new Label("More Player Stats", skin);
         titleLabel.setFontScale(1.6f);
         titleLabel.setAlignment(Align.center);
         root.add(titleLabel).padBottom(16).row();
@@ -93,24 +92,20 @@ public class LeaderboardScreen extends ScreenAdapter {
         statusLabel.setAlignment(Align.center);
         root.add(statusLabel).padBottom(14).row();
 
-        headerLabel = new Label("", skin);
-        headerLabel.setVisible(false);
-        root.add(headerLabel).height(0).padBottom(0).row();
-
         rowsTable = new Table();
         rowsTable.defaults().padBottom(8).padRight(12).left();
         root.add(rowsTable).expandY().top().row();
 
-        TextButton moreStatsBtn = new TextButton("More Player Stats", skin);
-        moreStatsBtn.addListener(new ChangeListener() {
+        TextButton backBtn = new TextButton("Back", skin);
+        backBtn.addListener(new ChangeListener() {
             @Override
             public void changed(ChangeEvent event, Actor actor) {
-                game.playMenuConfirmSound();
-                game.showPlayerStatsScreen();
+                game.playMenuBackSound();
+                game.showLeaderboardScreen();
             }
         });
-        registerMenuButton(moreStatsBtn);
-        root.add(moreStatsBtn).width(300).height(60).padTop(10).padBottom(12).row();
+        registerMenuButton(backBtn);
+        root.add(backBtn).width(220).height(60).padTop(10).padBottom(12).row();
 
         TextButton returnBtn = new TextButton("Return to Lobby", skin, "yellow");
         returnBtn.addListener(new ChangeListener() {
@@ -129,7 +124,7 @@ public class LeaderboardScreen extends ScreenAdapter {
             public boolean keyDown(int keycode) {
                 if (keycode == com.badlogic.gdx.Input.Keys.ESCAPE) {
                     game.playMenuBackSound();
-                    game.showLobbyScreen();
+                    game.showLeaderboardScreen();
                     return true;
                 }
                 if (keycode == com.badlogic.gdx.Input.Keys.ENTER) {
@@ -217,25 +212,23 @@ public class LeaderboardScreen extends ScreenAdapter {
     private void rebuildRows() {
         rowsTable.clearChildren();
         statusLabel.setText(game.leaderboardLoading ? "Loading leaderboard..." : game.leaderboardStatusMessage);
-        headerLabel.setVisible(false);
 
         List<LeaderboardEntry> entries = game.leaderboardEntries;
         if (entries.isEmpty()) {
             return;
         }
 
-        rowsTable.add(buildHeaderCell("Rank", RANK_COL_WIDTH)).left();
         rowsTable.add(buildHeaderCell("Player", PLAYER_COL_WIDTH)).left();
-        rowsTable.add(buildHeaderCell("Losses", LOSSES_COL_WIDTH)).left();
-        rowsTable.add(buildHeaderCell("Wins", WINS_COL_WIDTH)).left();
+        rowsTable.add(buildHeaderCell("Loss Rate", LOSE_RATE_COL_WIDTH)).left();
+        rowsTable.add(buildHeaderCell("Win Rate", WIN_RATE_COL_WIDTH)).left();
+        rowsTable.add(buildHeaderCell("Derezzes", DEREZZES_COL_WIDTH)).left();
         rowsTable.row();
 
-        for (int i = 0; i < entries.size(); i++) {
-            LeaderboardEntry entry = entries.get(i);
-            rowsTable.add(buildValueCell(String.format("#%02d", i + 1), RANK_COL_WIDTH)).left();
+        for (LeaderboardEntry entry : entries) {
             rowsTable.add(buildValueCell(entry.getPlayerDisplay(), PLAYER_COL_WIDTH)).left();
-            rowsTable.add(buildValueCell(entry.getLossesDisplay(), LOSSES_COL_WIDTH)).left();
-            rowsTable.add(buildValueCell(entry.getWinsDisplay(), WINS_COL_WIDTH)).left();
+            rowsTable.add(buildValueCell(entry.getLoseRateDisplay(), LOSE_RATE_COL_WIDTH)).left();
+            rowsTable.add(buildValueCell(entry.getRateDisplay(), WIN_RATE_COL_WIDTH)).left();
+            rowsTable.add(buildValueCell(entry.getDerezzesDisplay(), DEREZZES_COL_WIDTH)).left();
             rowsTable.row();
         }
     }

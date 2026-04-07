@@ -361,6 +361,10 @@ public class JavaTronGame extends com.badlogic.gdx.Game {
 		setScreen(new LeaderboardScreen(this));
 	}
 
+	public void showPlayerStatsScreen() {
+		setScreen(new PlayerStatsScreen(this));
+	}
+
 	public void showGameScreen() {
 		clearMatchFoundNotice();
 		setScreen(new GameScreen(this));
