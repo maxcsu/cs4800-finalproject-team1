@@ -175,7 +175,6 @@ public final class ServerMain {
                     + ", logtowebhook=" + config.logToWebhook);
 
             transport.start(config.serverPort);
-            logger.info("[Lobby] Server socket opened.");
 
         } catch (Exception ex) {
             System.err.println("[Server] Fatal startup error: " + ex);
