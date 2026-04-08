@@ -154,7 +154,6 @@ public class GameScreen extends ScreenAdapter {
         practicePendingTurnDir = null;
         practiceCountdownTimer = 0f;
         practiceCountdownStep = 0;
-<<<<<<< Updated upstream
         if (game.practiceMode && game.roundResultText == null) {
             beginPracticeCountdown();
         }
@@ -164,11 +163,6 @@ public class GameScreen extends ScreenAdapter {
     public void hide() {
         scheduledMusicStartAtMs = -1L;
         stopGameplayLoopSounds();
-=======
-        if (game.practiceMode) {
-            beginPracticeCountdown();
-        }
->>>>>>> Stashed changes
     }
 
     public void applyAudioSettings() {
@@ -404,20 +398,6 @@ public class GameScreen extends ScreenAdapter {
             font.getData().setScale(1f);
         }
 
-<<<<<<< Updated upstream
-=======
-        // Practice mode label (prominent)
-        if (game.practiceMode && !exitPromptVisible) {
-            font.setColor(Color.CYAN);
-            font.getData().setScale(1.6f);
-            String practiceLabel = "OFFLINE PRACTICE - WASD / Arrow Keys";
-            float labelWidth = practiceLabel.length() * 10f; // rough estimate
-            float labelX = Math.max(10f, worldWidth / 2f - labelWidth / 2f);
-            font.draw(spriteBatch, practiceLabel, labelX, worldHeight - 12f);
-            font.getData().setScale(1f);
-        }
-
->>>>>>> Stashed changes
         // Tick the GO display timer and auto-clear when expired
         if (goDisplayTimer > 0f && (!exitPromptVisible || !game.practiceMode)) {
             goDisplayTimer -= delta;
@@ -693,11 +673,9 @@ public class GameScreen extends ScreenAdapter {
         game.countdownActive = true;
         lastCountdownMessage = null;
         handleRoundAudioState();
-        System.out.println("[Practice] Countdown: 3");
     }
 
     private void advancePracticeCountdown() {
-<<<<<<< Updated upstream
         switch (practiceCountdownStep) {
             case 1 -> {
                 practiceCountdownStep = 2;
@@ -725,36 +703,6 @@ public class GameScreen extends ScreenAdapter {
                 game.countdownMessage = null;
                 game.countdownActive = false;
             }
-=======
-        if (practiceCountdownStep == 3) {
-            practiceCountdownStep = 2;
-            practiceCountdownTimer = 0.9f;
-            game.countdownMessage = "2";
-            lastCountdownMessage = null;
-            handleRoundAudioState();
-            System.out.println("[Practice] Countdown: 2");
-        } else if (practiceCountdownStep == 2) {
-            practiceCountdownStep = 1;
-            practiceCountdownTimer = 0.9f;
-            game.countdownMessage = "1";
-            lastCountdownMessage = null;
-            handleRoundAudioState();
-            System.out.println("[Practice] Countdown: 1");
-        } else if (practiceCountdownStep == 1) {
-            practiceCountdownStep = 4; // GO
-            practiceCountdownTimer = 0.6f;
-            game.countdownMessage = "GO";
-            lastCountdownMessage = null;
-            handleRoundAudioState();
-            System.out.println("[Practice] Countdown: GO");
-        } else {
-            // countdown finished
-            practiceCountdownStep = 0;
-            practiceCountdownTimer = 0f;
-            game.countdownMessage = null;
-            game.countdownActive = false;
-            System.out.println("[Practice] Countdown: DONE");
->>>>>>> Stashed changes
         }
         if (practiceCountdownStep == 0 && !"GO".equals(game.countdownMessage)) {
             game.countdownActive = false;
