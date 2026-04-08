@@ -118,6 +118,11 @@ JavaTron/Make
 JavaTron/Run
 *.zip
 JavaTron/server/server.cfg
+JavaTron/server.cfg
+JavaTron/assets/assets.txt
+JavaTron/server/leaderboard.db
+JavaTron/server/build/libs/server.cfg
+JavaTron/server/build/libs/leaderboard.db
 *.lnk
 finddiff.py
 JavaTron/leaderboard.db
