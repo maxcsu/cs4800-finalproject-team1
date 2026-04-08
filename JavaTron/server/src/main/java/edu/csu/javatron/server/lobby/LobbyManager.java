@@ -333,6 +333,34 @@ public final class LobbyManager {
                 updateGuiPlayers();
                 return;
             }
+         // --- Ranked matchmaking filter ---
+            if (config.rankedEnabled) {
+
+                StatsManager.LeaderboardEntry e1 = statsManager.getTopLeaderboardEntries(100)
+                        .stream()
+                        .filter(e -> e.lastPlayerNumber == p1.getPlayerNumber())
+                        .findFirst()
+                        .orElse(null);
+
+                StatsManager.LeaderboardEntry e2 = statsManager.getTopLeaderboardEntries(100)
+                        .stream()
+                        .filter(e -> e.lastPlayerNumber == p2.getPlayerNumber())
+                        .findFirst()
+                        .orElse(null);
+
+                if (e1 != null && e2 != null) {
+
+                    String rank1 = statsManager.getRankTier(e1.winRate);
+                    String rank2 = statsManager.getRankTier(e2.winRate);
+
+                    if (!rank1.equals(rank2)) {
+                        requeue(p1);
+                        requeue(p2);
+                        continue;
+                    }
+                }
+            }
+            // --- End ranked filter ---
 
             startMatchPvp(freeBox, p1, p2);
         }

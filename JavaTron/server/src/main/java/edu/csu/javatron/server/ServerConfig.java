@@ -41,7 +41,8 @@ public final class ServerConfig {
     public boolean allowBotGames = true;
     public int trailTimeSeconds = -1; // -1 permanent
     public boolean enforceUniqueColors = false;
-
+    public boolean rankedEnabled = true;
+    
     // Optional safety valves
     public int maxConsecutiveDraws = -1; // -1 disables
     public int idleKickSeconds = -1;     // -1 disables
@@ -81,6 +82,7 @@ public final class ServerConfig {
             config.allowBotGames = parseBool(map.get("allow-botgames"), config.allowBotGames);
             config.trailTimeSeconds = parseInt(map.get("trail-time"), config.trailTimeSeconds);
             config.enforceUniqueColors = parseBool(map.get("enforce-uniquecolors"), config.enforceUniqueColors);
+            config.rankedEnabled = parseBool(map.get("ranked-enabled"), config.rankedEnabled);
 
             config.maxConsecutiveDraws = parseInt(map.get("max-consecutive-draws"), config.maxConsecutiveDraws);
             config.idleKickSeconds = parseInt(map.get("idle-kick-seconds"), config.idleKickSeconds);

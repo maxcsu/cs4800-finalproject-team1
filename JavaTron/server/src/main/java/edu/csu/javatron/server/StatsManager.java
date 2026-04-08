@@ -499,4 +499,11 @@ public final class StatsManager implements AutoCloseable {
     public void close() {
         // Connections are short-lived, so there is nothing to release here.
     }
+    
+ // Determine rank tier based on win rate percentage
+    public String getRankTier(double winRate) {
+        if (winRate <= 50.0) return "BRONZE";
+        if (winRate <= 75.0) return "SILVER";
+        return "GOLD";
+    }
 }
