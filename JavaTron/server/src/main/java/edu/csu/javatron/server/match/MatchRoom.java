@@ -391,7 +391,7 @@ if (config != null && config.idleKickSeconds > 0) {
         } else {
             wasDraw = true;
             // draw (both collided)
-            roundSummary = String.format("Round %d: draw (simultaneous collision). Score: %d-%d",
+            roundSummary = String.format("Round %d: draw. Score: %d-%d",
                     roundNumber, aWins, bWins);
         }
 

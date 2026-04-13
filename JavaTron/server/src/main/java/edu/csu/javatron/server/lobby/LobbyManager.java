@@ -323,47 +323,102 @@ public final class LobbyManager {
             if (p1 == null)
                 return;
 
-            ClientSession p2 = pollConnectedQueued();
+            ClientSession p2 = config.rankedEnabled
+                    ? pollCompatibleQueuedOpponent(p1)
+                    : pollConnectedQueued();
             if (p2 == null) {
                 // Put p1 back at the end of the queue and stop.
                 requeue(p1);
-                logger.info(String.format("[Lobby] No opponent available for player %s %02d. Waiting in queue.",
+                logger.info(String.format("[Lobby] No compatible opponent available for player %s %02d. Waiting in queue.",
                         p1.getRequestedColor(), p1.getPlayerNumber()));
                 sendLobbyStatusToAll();
                 updateGuiPlayers();
                 return;
             }
-         // --- Ranked matchmaking filter ---
-            if (config.rankedEnabled) {
-
-                StatsManager.LeaderboardEntry e1 = statsManager.getTopLeaderboardEntries(100)
-                        .stream()
-                        .filter(e -> e.lastPlayerNumber == p1.getPlayerNumber())
-                        .findFirst()
-                        .orElse(null);
-
-                StatsManager.LeaderboardEntry e2 = statsManager.getTopLeaderboardEntries(100)
-                        .stream()
-                        .filter(e -> e.lastPlayerNumber == p2.getPlayerNumber())
-                        .findFirst()
-                        .orElse(null);
-
-                if (e1 != null && e2 != null) {
-
-                    String rank1 = statsManager.getRankTier(e1.winRate);
-                    String rank2 = statsManager.getRankTier(e2.winRate);
-
-                    if (!rank1.equals(rank2)) {
-                        requeue(p1);
-                        requeue(p2);
-                        continue;
-                    }
-                }
-            }
-            // --- End ranked filter ---
 
             startMatchPvp(freeBox, p1, p2);
         }
+    }
+
+    private ClientSession pollCompatibleQueuedOpponent(ClientSession anchor) {
+        if (anchor == null) {
+            return null;
+        }
+
+        List<ClientSession> skipped = new ArrayList<>();
+        ClientSession fallback = null;
+        ClientSession candidate;
+        while ((candidate = pollConnectedQueued()) != null) {
+            if (areRankCompatible(anchor, candidate)) {
+                restoreQueuedOrder(skipped);
+                return candidate;
+            }
+
+            if (fallback == null) {
+                fallback = candidate;
+            } else {
+                skipped.add(candidate);
+            }
+        }
+
+        restoreQueuedOrder(skipped);
+        if (fallback != null) {
+            logger.info(String.format(
+                    "[Lobby] No same-tier opponent found for player %s %02d. Falling back to first available queued opponent %s %02d.",
+                    anchor.getRequestedColor(), anchor.getPlayerNumber(),
+                    fallback.getRequestedColor(), fallback.getPlayerNumber()));
+        }
+        return fallback;
+    }
+
+    private boolean areRankCompatible(ClientSession p1, ClientSession p2) {
+        if (p1 == null || p2 == null || !config.rankedEnabled) {
+            return true;
+        }
+
+        List<StatsManager.LeaderboardEntry> entries = statsManager.getTopLeaderboardEntries(100);
+        StatsManager.LeaderboardEntry e1 = entries.stream()
+                .filter(e -> e.lastPlayerNumber == p1.getPlayerNumber())
+                .findFirst()
+                .orElse(null);
+        StatsManager.LeaderboardEntry e2 = entries.stream()
+                .filter(e -> e.lastPlayerNumber == p2.getPlayerNumber())
+                .findFirst()
+                .orElse(null);
+
+        if (e1 == null || e2 == null) {
+            return true;
+        }
+
+        String rank1 = statsManager.getRankTier(e1.winRate);
+        String rank2 = statsManager.getRankTier(e2.winRate);
+        if (rank1.equals(rank2)) {
+            return true;
+        }
+
+        logger.info(String.format(
+                "[Lobby] Ranked matchmaking held players %s %02d and %s %02d in queue due to tier mismatch (%s vs %s).",
+                p1.getRequestedColor(), p1.getPlayerNumber(),
+                p2.getRequestedColor(), p2.getPlayerNumber(),
+                rank1, rank2));
+        return false;
+    }
+
+    private void restoreQueuedOrder(List<ClientSession> prefix) {
+        if (prefix == null || prefix.isEmpty()) {
+            return;
+        }
+
+        List<ClientSession> tail = new ArrayList<>();
+        ClientSession queued;
+        while ((queued = waitingQueue.poll()) != null) {
+            tail.add(queued);
+        }
+
+        for (ClientSession session : prefix) {
+            requeue(session);
+        }
+        waitingQueue.addAll(tail);
     }
 
     private ClientSession pollConnectedQueued() {

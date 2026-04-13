@@ -41,7 +41,7 @@ public final class ServerConfig {
     public boolean allowBotGames = true;
     public int trailTimeSeconds = -1; // -1 permanent
     public boolean enforceUniqueColors = false;
-    public boolean rankedEnabled = true;
+    public boolean rankedEnabled = false;
     
     // Optional safety valves
     public int maxConsecutiveDraws = -1; // -1 disables
@@ -123,6 +123,7 @@ public final class ServerConfig {
             writer.write("allow-botgames=" + cfg.allowBotGames + " // Allow bot matches while in lobby.\n");
             writer.write("trail-time=" + cfg.trailTimeSeconds + " // -1 = Permanent trails.\n");
             writer.write("enforce-uniquecolors=" + cfg.enforceUniqueColors + "\n");
+            writer.write("ranked-enabled=" + cfg.rankedEnabled + " // If true: only match players in the same rank tier.\n");
             writer.write("\n");
             writer.write("// Logging\n");
             writer.write("logtofile=" + cfg.logToFile + " // Write server logs to a file.\n");
@@ -143,6 +144,7 @@ public final class ServerConfig {
         required.add("allow-botgames");
         required.add("trail-time");
         required.add("enforce-uniquecolors");
+        required.add("ranked-enabled");
         required.add("logtofile");
         required.add("logonefile");
         required.add("logtowebhook");
@@ -182,6 +184,7 @@ public final class ServerConfig {
         if (key.equals("allow-botgames")) return Boolean.toString(d.allowBotGames);
         if (key.equals("trail-time")) return Integer.toString(d.trailTimeSeconds);
         if (key.equals("enforce-uniquecolors")) return Boolean.toString(d.enforceUniqueColors);
+        if (key.equals("ranked-enabled")) return Boolean.toString(d.rankedEnabled);
         if (key.equals("logtofile")) return Boolean.toString(d.logToFile);
         if (key.equals("logonefile")) return Boolean.toString(d.logOneFile);
         if (key.equals("logtowebhook")) return Boolean.toString(d.logToWebhook);
